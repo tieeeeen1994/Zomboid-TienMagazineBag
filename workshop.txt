@@ -1,0 +1,4 @@
+version=1
+title=Tien's Magazine Bags
+tags=Build 41;Balance;Military;Multiplayer
+visibility=public
