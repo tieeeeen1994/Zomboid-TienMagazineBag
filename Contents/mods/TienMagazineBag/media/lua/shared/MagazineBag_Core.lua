@@ -12,6 +12,13 @@ function MagazineBag_Core.IsMagazineBag(item)
     return modData.isMagazineBag or false
 end
 
+function MagazineBag_Core.HasValidWeapon(player)
+    if not player then return false end
+
+    local weapon = player:getPrimaryHandItem()
+    return weapon and weapon:isRanged() and weapon.getMagazineType and weapon:getMagazineType()
+end
+
 function MagazineBag_Core.FindMagazineBags(player)
     local magazineBags = {}
     local wornItems = player:getWornItems()
@@ -29,38 +36,40 @@ function MagazineBag_Core.FindMagazineBags(player)
 end
 
 function MagazineBag_Core.IsMagazine(item, player)
-    if not item or not player then return false end
+    if not item or not MagazineBag_Core.HasValidWeapon(player) then return false end
 
     local weapon = player:getPrimaryHandItem()
-    if not weapon or not weapon:isRanged() or not weapon.getMagazineType then return false end
-
     local weaponMagType = weapon:getMagazineType()
-    if not weaponMagType then return false end
-
     local magazineType = item:getType()
     local weaponMagTypeName = weaponMagType:find("%.") and weaponMagType:match("%.(.+)$") or weaponMagType
 
     return magazineType == weaponMagTypeName
 end
 
-function MagazineBag_Core.HasEmptyMagazinesInInventory(player)
-    if not player then return false end
+function MagazineBag_Core.IsMagazineEmpty(magazine)
+    if not magazine then return false end
+    local currentAmmo = magazine:getCurrentAmmoCount() or 0
+    local maxAmmo = magazine:getMaxAmmo() or 0
+    return currentAmmo < maxAmmo
+end
 
-    local weapon = player:getPrimaryHandItem()
-    if not weapon or not weapon:isRanged() or not weapon.getMagazineType then return false end
+function MagazineBag_Core.IsMagazineFull(magazine)
+    if not magazine then return false end
+    local currentAmmo = magazine:getCurrentAmmoCount() or 0
+    local maxAmmo = magazine:getMaxAmmo() or 0
+    return currentAmmo >= maxAmmo
+end
+
+function MagazineBag_Core.HasEmptyMagazinesInInventory(player)
+    if not MagazineBag_Core.HasValidWeapon(player) then return false end
 
     local inventory = player:getInventory()
     local items = inventory:getItems()
 
     for i = 0, items:size() - 1 do
         local item = items:get(i)
-        if item and MagazineBag_Core.IsMagazine(item, player) then
-            local currentAmmo = item:getCurrentAmmoCount() or 0
-            local maxAmmo = item:getMaxAmmo() or 0
-
-            if currentAmmo < maxAmmo then
-                return true
-            end
+        if item and MagazineBag_Core.IsMagazine(item, player) and MagazineBag_Core.IsMagazineEmpty(item) then
+            return true
         end
     end
 
@@ -68,7 +77,7 @@ function MagazineBag_Core.HasEmptyMagazinesInInventory(player)
 end
 
 function MagazineBag_Core.HasFullMagazinesInBags(player)
-    if not player then return false end
+    if not MagazineBag_Core.HasValidWeapon(player) then return false end
 
     local magazineBags = MagazineBag_Core.FindMagazineBags(player)
 
@@ -79,13 +88,8 @@ function MagazineBag_Core.HasFullMagazinesInBags(player)
 
             for i = 0, bagItems:size() - 1 do
                 local item = bagItems:get(i)
-                if item and MagazineBag_Core.IsMagazine(item, player) then
-                    local currentAmmo = item:getCurrentAmmoCount() or 0
-                    local maxAmmo = item:getMaxAmmo() or 0
-
-                    if currentAmmo >= maxAmmo then
-                        return true
-                    end
+                if item and MagazineBag_Core.IsMagazine(item, player) and MagazineBag_Core.IsMagazineFull(item) then
+                    return true
                 end
             end
         end
@@ -105,18 +109,13 @@ function MagazineBag_Core.StoreAllMagazinesToBag(player)
 
     for i = items:size() - 1, 0, -1 do
         local item = items:get(i)
-        if item and MagazineBag_Core.IsMagazine(item, player) then
-            local currentAmmo = item:getCurrentAmmoCount() or 0
-            local maxAmmo = item:getMaxAmmo() or 0
-
-            if currentAmmo < maxAmmo then
-                for _, bag in ipairs(magazineBags) do
-                    local bagContainer = bag:getItemContainer()
-                    if bagContainer and bagContainer:hasRoomFor(player, item:getWeight()) then
-                        local action = MagazineBag_MoveToBag:new(player, item, bag)
-                        ISTimedActionQueue.add(action)
-                        break
-                    end
+        if item and MagazineBag_Core.IsMagazine(item, player) and MagazineBag_Core.IsMagazineEmpty(item) then
+            for _, bag in ipairs(magazineBags) do
+                local bagContainer = bag:getItemContainer()
+                if bagContainer and bagContainer:hasRoomFor(player, item:getWeight()) then
+                    local action = MagazineBag_MoveToBag:new(player, item, bag)
+                    ISTimedActionQueue.add(action)
+                    break
                 end
             end
         end
@@ -138,11 +137,8 @@ function MagazineBag_Core.FetchFullMagazinesFromBag(player)
 
             for i = bagItems:size() - 1, 0, -1 do
                 local item = bagItems:get(i)
-                if item and MagazineBag_Core.IsMagazine(item, player) then
-                    local currentAmmo = item:getCurrentAmmoCount() or 0
-                    local maxAmmo = item:getMaxAmmo() or 0
-
-                    if currentAmmo >= maxAmmo and playerInventory:hasRoomFor(player, item:getWeight()) then
+                if item and MagazineBag_Core.IsMagazine(item, player) and MagazineBag_Core.IsMagazineFull(item) then
+                    if playerInventory:hasRoomFor(player, item:getWeight()) then
                         local action = MagazineBag_FetchFromBag:new(player, item, bag)
                         ISTimedActionQueue.add(action)
                     end
