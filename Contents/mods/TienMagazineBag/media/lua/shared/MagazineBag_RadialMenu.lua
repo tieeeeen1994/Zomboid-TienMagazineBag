@@ -32,22 +32,22 @@ local function magazineBagRadialMenu()
             return result
         end
 
-        if not MagazineBag_Core.HasMagazines(player) then
-            return result
-        end
-
         local menu = getPlayerRadialMenu(playerNum)
         if not menu then
             return result
         end
 
-        menu:addSlice("Store Incomplete & Empty Magazines", storeIcon, function()
-            MagazineBag_Core.StoreAllMagazinesToBag(player)
-        end)
+        if MagazineBag_Core.HasEmptyMagazinesInInventory(player) then
+            menu:addSlice("Store Incomplete & Empty Magazines", storeIcon, function()
+                MagazineBag_Core.StoreAllMagazinesToBag(player)
+            end)
+        end
 
-        menu:addSlice("Fetch Full Magazines", fetchIcon, function()
-            MagazineBag_Core.FetchFullMagazinesFromBag(player)
-        end)
+        if MagazineBag_Core.HasFullMagazinesInBags(player) then
+            menu:addSlice("Fetch Full Magazines", fetchIcon, function()
+                MagazineBag_Core.FetchFullMagazinesFromBag(player)
+            end)
+        end
 
         return result
     end
