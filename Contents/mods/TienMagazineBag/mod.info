@@ -1,4 +1,4 @@
 name=Tien's Magazine Bags
 id=TienMagazineBag
-description=This mod adds the ability to sotre incomplete or empty firearm magazines to an assigned magazine bag.
-version=1.0.0
+description=This mod adds the ability to store incomplete or empty firearm magazines to an assigned magazine bag as well as fetch full firearm magazines from the same bag.
+version=2.0.0
