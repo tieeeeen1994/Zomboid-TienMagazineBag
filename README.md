@@ -1,5 +1,7 @@
 # Tien's Magazine Bag
 
+Supports Project Zomboid Build 41 and Build 42. The Build 41 version lives at the mod root (`Contents/mods/TienMagazineBag/media`), and the Build 42 version in `Contents/mods/TienMagazineBag/42`.
+
 ## Features
 
 - Magazine Bag: This is not an actual item, but something that the player assigns to be able to use the features of this mod. Magazine Bags allow the features of the mod to determine where place empty or incomplete firearm magazines from the main inventory through a radial menu entry.
