@@ -79,6 +79,22 @@ function MagazineBag_Core.HasEmptyMagazinesInInventory(player)
     return false
 end
 
+function MagazineBag_Core.HasMagazinesInInventory(player)
+    if not MagazineBag_Core.HasValidWeapon(player) then return false end
+
+    local inventory = player:getInventory()
+    local items = inventory:getItems()
+
+    for i = 0, items:size() - 1 do
+        local item = items:get(i)
+        if item and MagazineBag_Core.IsMagazine(item, player) then
+            return true
+        end
+    end
+
+    return false
+end
+
 function MagazineBag_Core.HasFullMagazinesInBags(player)
     if not MagazineBag_Core.HasValidWeapon(player) then return false end
 
@@ -101,7 +117,7 @@ function MagazineBag_Core.HasFullMagazinesInBags(player)
     return false
 end
 
-function MagazineBag_Core.StoreAllMagazinesToBag(player)
+function MagazineBag_Core.StoreAllMagazinesToBag(player, includeFull)
     if not player then return end
 
     local inventory = player:getInventory()
@@ -112,7 +128,7 @@ function MagazineBag_Core.StoreAllMagazinesToBag(player)
 
     for i = items:size() - 1, 0, -1 do
         local item = items:get(i)
-        if item and MagazineBag_Core.IsMagazine(item, player) and MagazineBag_Core.IsMagazineEmpty(item) then
+        if item and MagazineBag_Core.IsMagazine(item, player) and (includeFull or MagazineBag_Core.IsMagazineEmpty(item)) then
             for _, bag in ipairs(magazineBags) do
                 local bagContainer = bag:getItemContainer()
                 if bagContainer and bagContainer:hasRoomFor(player, item) then

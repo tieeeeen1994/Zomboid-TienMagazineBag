@@ -3,6 +3,7 @@ require "ISUI/ISFirearmRadialMenu"
 
 local storeIcon = getTexture("media/ui/RadialMenu_MagazineBagStore.png")
 local fetchIcon = getTexture("media/ui/RadialMenu_MagazineBagFetch.png")
+local stowAllIcon = getTexture("media/ui/RadialMenu_MagazineBagStowAll.png")
 
 local function magazineBagRadialMenu()
     if not ISFirearmRadialMenu or not ISFirearmRadialMenu.fillMenu then
@@ -35,6 +36,12 @@ local function magazineBagRadialMenu()
         if MagazineBag_Core.HasEmptyMagazinesInInventory(player) then
             menu:addSlice("Store Incomplete & Empty Magazines", storeIcon, function()
                 MagazineBag_Core.StoreAllMagazinesToBag(player)
+            end)
+        end
+
+        if MagazineBag_Core.HasMagazinesInInventory(player) then
+            menu:addSlice("Store All Magazines", stowAllIcon, function()
+                MagazineBag_Core.StoreAllMagazinesToBag(player, true)
             end)
         end
 
