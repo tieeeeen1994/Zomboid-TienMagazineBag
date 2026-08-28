@@ -1,9 +1,13 @@
 MagazineBag_Core = {}
 
-function MagazineBag_Core.AssignMagazineBag(item, value)
+function MagazineBag_Core.AssignMagazineBag(player, item, value)
     if not item then return false end
     local modData = item:getModData()
     modData.isMagazineBag = value
+    -- B42 MP: inventory is server-authoritative, so the change is lost on logout unless transmitted
+    if player and syncItemModData then
+        syncItemModData(player, item)
+    end
 end
 
 function MagazineBag_Core.IsMagazineBag(item)
@@ -132,8 +136,7 @@ function MagazineBag_Core.StoreAllMagazinesToBag(player, includeFull)
             for _, bag in ipairs(magazineBags) do
                 local bagContainer = bag:getItemContainer()
                 if bagContainer and bagContainer:hasRoomFor(player, item) then
-                    local action = MagazineBag_MoveToBag:new(player, item, bag)
-                    ISTimedActionQueue.add(action)
+                    ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, item, inventory, bagContainer, "PutItemInBag"))
                     break
                 end
             end
@@ -158,8 +161,7 @@ function MagazineBag_Core.FetchFullMagazinesFromBag(player)
                 local item = bagItems:get(i)
                 if item and MagazineBag_Core.IsMagazine(item, player) and MagazineBag_Core.IsMagazineFull(item) then
                     if playerInventory:hasRoomFor(player, item) then
-                        local action = MagazineBag_FetchFromBag:new(player, item, bag)
-                        ISTimedActionQueue.add(action)
+                        ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, item, bagContainer, playerInventory, "BoxOfRoundsOpenOne"))
                     end
                 end
             end

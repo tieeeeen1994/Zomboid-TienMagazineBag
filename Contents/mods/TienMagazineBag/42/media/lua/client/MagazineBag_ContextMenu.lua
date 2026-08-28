@@ -18,13 +18,15 @@ local function magazineBagContextMenu(player, context, items)
     if not item.canBeEquipped or not item:canBeEquipped() then return end
     if not item.getCapacity or item:getCapacity() <= 0 then return end
 
+    local playerObj = getSpecificPlayer(player)
+
     if MagazineBag_Core.IsMagazineBag(item) then
         context:addOption("Unassign Magazine Bag", item, function()
-            MagazineBag_Core.AssignMagazineBag(item, false)
+            MagazineBag_Core.AssignMagazineBag(playerObj, item, false)
         end)
     else
         context:addOption("Assign Magazine Bag", item, function()
-            MagazineBag_Core.AssignMagazineBag(item, true)
+            MagazineBag_Core.AssignMagazineBag(playerObj, item, true)
         end)
     end
 end
