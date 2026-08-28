@@ -4,9 +4,16 @@ function MagazineBag_Core.AssignMagazineBag(player, item, value)
     if not item then return false end
     local modData = item:getModData()
     modData.isMagazineBag = value
-    -- B42 MP: inventory is server-authoritative, so the change is lost on logout unless transmitted
-    if player and syncItemModData then
-        syncItemModData(player, item)
+
+    -- B42 MP: inventory is server-authoritative, so the server's copy of the
+    -- item must get the flag too or the assignment is lost on logout
+    if player then
+        if syncItemModData then
+            syncItemModData(player, item)
+        end
+        if isClient() then
+            sendClientCommand(player, "TienMagazineBag", "assignBag", { itemId = item:getID(), value = value })
+        end
     end
 end
 
