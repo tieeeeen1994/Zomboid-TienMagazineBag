@@ -8,3 +8,5 @@ Supports Project Zomboid Build 41 and Build 42. The Build 41 version lives at th
 - Assign a Magazine Bag: Right click one of your worn items that has a container support to be able to assign them as a magazine bag.
 - "Store Incomplete & Empty Magazines" Radial Menu Entry: Hold the Reload key to gain access to the radial menu. Using this entry will move empty or incomplete firearm magazines to the assigned magazine bag.
 - "Fetch Full Magazines" Radial Menu Entry: Hold the Reload key to gain access to the radial menu. Using this entry will move full firearm magazines from the assigned magazine bag to your main inventory.
+- "Store All Magazines" Radial Menu Entry: Hold the Reload key to gain access to the radial menu. Using this entry will move all firearm magazines from your main inventory to assigned magazine bags.
+- "Reload Magazines" Radial Menu Entry: Hold the Reload key to gain access to the radial menu. Using this entry will attempt to reload all incomplete and empty magazines from the main inventory and magazine bags.
