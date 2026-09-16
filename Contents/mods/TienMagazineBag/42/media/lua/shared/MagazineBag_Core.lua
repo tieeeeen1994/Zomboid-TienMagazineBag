@@ -230,20 +230,48 @@ function MagazineBag_Core.ReloadMagazines(player)
     end
 end
 
--- Queues a move into the first bag with room. hasRoomFor only sees a bag as it
--- is right now and nothing has moved yet while the queue is being built, so
--- each bag is also charged for the weight it has already been promised.
+-- Queues a move into the first bag that will take the item.
+--
+-- isItemAllowed matters as much as the weight check: a restricted container
+-- such as a shoulder holster takes pistol magazines only, yet its weight
+-- reduction leaves it reporting room for anything. Without the check it would
+-- claim items it then refuses, both starving the bag that would have accepted
+-- them and aborting the rest of the queue, since a rejected transfer stops and
+-- resets it.
+--
+-- hasRoomFor likewise only sees a bag as it is right now and nothing has moved
+-- yet while the queue is being built, so each bag is also charged for the
+-- weight it has already been promised.
 local function StoreInBag(player, item, inventory, magazineBags, reserved)
     local weight = item:getActualWeight()
 
     for index, bag in ipairs(magazineBags) do
         local bagContainer = bag:getItemContainer()
-        if bagContainer and bagContainer:hasRoomFor(player, reserved[index] + weight) then
+        if bagContainer and bagContainer:isItemAllowed(item)
+                and bagContainer:hasRoomFor(player, reserved[index] + weight) then
             reserved[index] = reserved[index] + weight
             ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, item, inventory, bagContainer, "PutItemInBag"))
             return
         end
     end
+end
+
+-- The first worn magazine bag that will take the item as things stand, ignoring
+-- one that has just turned it away. Used when a queued move reaches a bag that
+-- has filled up since it was planned.
+function MagazineBag_Core.FindBagForItem(player, item, exclude)
+    if not player or not item then return nil end
+
+    for _, bag in ipairs(MagazineBag_Core.FindMagazineBags(player)) do
+        local bagContainer = bag:getItemContainer()
+        if bagContainer and bagContainer ~= exclude
+                and bagContainer:isItemAllowed(item)
+                and bagContainer:hasRoomFor(player, item) then
+            return bagContainer
+        end
+    end
+
+    return nil
 end
 
 function MagazineBag_Core.StoreAmmoToBag(player, includeFull)
