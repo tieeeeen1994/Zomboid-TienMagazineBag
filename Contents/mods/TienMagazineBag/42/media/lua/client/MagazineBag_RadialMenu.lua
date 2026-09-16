@@ -1,4 +1,5 @@
 require 'MagazineBag_Core'
+require 'MagazineBag_Options'
 require "ISUI/ISFirearmRadialMenu"
 
 local storeIcon = getTexture("media/ui/RadialMenu_MagazineBagStore.png")
@@ -34,27 +35,31 @@ local function magazineBagRadialMenu()
             return result
         end
 
-        if MagazineBag_Core.HasSpentAmmoInInventory(player) then
+        if MagazineBag_Options.IsEnabled(MagazineBag_Options.STORE_SPENT)
+                and MagazineBag_Core.HasSpentAmmoInInventory(player) then
             menu:addSlice("Store Spent Ammo", storeIcon, function()
                 MagazineBag_Core.StoreAmmoToBag(player)
             end)
         end
 
-        if MagazineBag_Core.HasAmmoInInventory(player) then
+        if MagazineBag_Options.IsEnabled(MagazineBag_Options.STORE_ALL)
+                and MagazineBag_Core.HasAmmoInInventory(player) then
             menu:addSlice("Store All Ammo", stowAllIcon, function()
                 MagazineBag_Core.StoreAmmoToBag(player, true)
             end)
         end
 
-        if MagazineBag_Core.HasReloadableMagazines(player) then
+        if MagazineBag_Options.IsEnabled(MagazineBag_Options.RELOAD)
+                and MagazineBag_Core.HasReloadableMagazines(player) then
             menu:addSlice("Reload Magazines", reloadIcon, function()
                 MagazineBag_Core.ReloadMagazines(player)
             end)
         end
 
-        if MagazineBag_Core.HasFullMagazinesInBags(player) then
-            menu:addSlice("Fetch Full Magazines", fetchIcon, function()
-                MagazineBag_Core.FetchFullMagazinesFromBag(player)
+        if MagazineBag_Options.IsEnabled(MagazineBag_Options.FETCH_FRESH)
+                and MagazineBag_Core.HasFreshAmmoInBags(player) then
+            menu:addSlice("Fetch Fresh Ammo", fetchIcon, function()
+                MagazineBag_Core.FetchFreshAmmoFromBag(player)
             end)
         end
 

@@ -21,11 +21,11 @@ local function magazineBagContextMenu(player, context, items)
     local playerObj = getSpecificPlayer(player)
 
     if MagazineBag_Core.IsMagazineBag(item) then
-        context:addOption("Unassign Magazine Bag", item, function()
+        context:addOption("Unassign Ammo Bag", item, function()
             MagazineBag_Core.AssignMagazineBag(playerObj, item, false)
         end)
     else
-        context:addOption("Assign Magazine Bag", item, function()
+        context:addOption("Assign Ammo Bag", item, function()
             MagazineBag_Core.AssignMagazineBag(playerObj, item, true)
         end)
     end

@@ -1,5 +1,5 @@
-name=Tien's Magazine Bags
+name=Tien's Ammo Bags
 id=TienMagazineBag
-description=This mod adds the ability to store incomplete or empty firearm magazines to an assigned magazine bag as well as fetch full firearm magazines from the same bag.
+description=Assign any bag, pouch or holster you are wearing as an ammo bag, then store magazines and loose rounds, reload, and fetch fresh ammunition from the firearm radial menu. Guns without magazines, such as revolvers and shotguns, are supported too, and each menu entry can be turned off in Settings.
 poster=poster.png
-version=2.1.1
+version=3.0.0
