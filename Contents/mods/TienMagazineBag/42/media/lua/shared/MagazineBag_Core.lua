@@ -164,31 +164,196 @@ function MagazineBag_Core.CountSpareBullets(player, magazine)
     return player:getInventory():getItemCountRecurse(ammoType:getItemKey())
 end
 
+-- Ammunition is carried as loose rounds, boxes of rounds, or cartons of boxes.
+-- Each reload pass unpacks one layer: a pass that opens cartons re-plans itself
+-- so the next one can open the boxes that came out of them.
+local MAX_UNPACK_PASSES = 3
+
+-- What one unpack of an item type yields, keyed by full type. false marks a
+-- type that can't be unpacked at all.
+local unpackResults = {}
+
+local function GetUnpackRecipe(item)
+    local recipeName = item.getDoubleClickRecipe and item:getDoubleClickRecipe()
+    if not recipeName or recipeName == "" then return nil end
+    return getScriptManager():getCraftRecipe(recipeName)
+end
+
+-- What a single unpack of an item produces: always the count, and where the
+-- recipe's output mapper can be read, the full type as well. Resolving through
+-- the mapper the way double-clicking the item would is what keeps a .45 carton
+-- from reading as a source of 9mm.
+local function ResolveUnpack(player, item)
+    local itemType = item:getFullType()
+    local cached = unpackResults[itemType]
+    if cached ~= nil then
+        return cached or nil
+    end
+
+    local result = false
+    local recipe = GetUnpackRecipe(item)
+    if recipe then
+        -- guarded: a recipe shape we don't understand must not break the reload
+        pcall(function()
+            local outputs = recipe:getOutputs()
+            if not outputs or outputs:size() ~= 1 then return end
+
+            local output = outputs:get(0)
+            if output:getResourceType() ~= ResourceType.Item then return end
+
+            result = { amount = math.max(1, output:getIntAmount() or 1) }
+
+            local logic = HandcraftLogic.new(player, nil, nil)
+            logic:setContainers(ISInventoryPaneContextMenu.getContainers(player))
+            logic:setRecipeFromContextClick(recipe, item)
+
+            local mapper = output:getOutputMapper()
+            local resultItem = mapper and mapper:getOutputItem(logic:getRecipeData(), true)
+            resultItem = resultItem or output:getScriptItem()
+            if resultItem then result.resultType = resultItem:getFullName() end
+        end)
+    end
+
+    unpackResults[itemType] = result
+
+    return result or nil
+end
+
+local function CollectCarriedItems(container, carried)
+    local items = container:getItems()
+
+    for i = 0, items:size() - 1 do
+        local item = items:get(i)
+        if item then
+            table.insert(carried, item)
+
+            local nested = item:getItemContainer()
+            if nested then CollectCarriedItems(nested, carried) end
+        end
+    end
+
+    return carried
+end
+
+-- The held weapon's AmmoBox script property. Without it a carton can only be
+-- recognised when the player already carries a matching box.
+local function GetWeaponAmmoBox(player)
+    local weapon = player:getPrimaryHandItem()
+    if not weapon or not weapon.getAmmoBox then return nil end
+
+    local ammoBox = weapon:getAmmoBox()
+    if type(ammoBox) ~= "string" or ammoBox == "" then return nil end
+
+    return ammoBox
+end
+
+-- Carried boxes that open into ammoItemType, and cartons that open into one of
+-- those boxes.
+function MagazineBag_Core.FindAmmoPackages(player, ammoItemType)
+    local boxes, cartons = {}, {}
+    if not ammoItemType then return boxes, cartons end
+
+    local carried = CollectCarriedItems(player:getInventory(), {})
+    local boxTypes = {}
+
+    local weaponAmmoBox = GetWeaponAmmoBox(player)
+    if weaponAmmoBox then boxTypes[weaponAmmoBox] = true end
+
+    for _, item in ipairs(carried) do
+        local unpack = ResolveUnpack(player, item)
+        if unpack and (unpack.resultType == ammoItemType or item:getFullType() == weaponAmmoBox) then
+            boxTypes[item:getFullType()] = true
+            table.insert(boxes, { item = item, yield = unpack.amount })
+        end
+    end
+
+    for _, item in ipairs(carried) do
+        local unpack = ResolveUnpack(player, item)
+        if unpack and unpack.resultType and boxTypes[unpack.resultType] then
+            table.insert(cartons, { item = item, yield = unpack.amount })
+        end
+    end
+
+    return boxes, cartons
+end
+
+-- Opens a box or carton exactly the way double-clicking it in the inventory
+-- does, so the vanilla animation, timing and item handling are preserved.
+function MagazineBag_Core.OpenAmmoPackage(player, item)
+    local recipe = GetUnpackRecipe(item)
+    if not recipe then return end
+
+    ISInventoryPaneContextMenu.OnNewCraft(item, recipe, player:getPlayerNum(), false)
+end
+
 function MagazineBag_Core.HasReloadableMagazines(player)
     local magazines = MagazineBag_Core.FindReloadableMagazines(player)
     if #magazines == 0 then return false end
-    return MagazineBag_Core.CountSpareBullets(player, magazines[1].magazine) > 0
+    if MagazineBag_Core.CountSpareBullets(player, magazines[1].magazine) > 0 then return true end
+
+    local ammoType = magazines[1].magazine:getAmmoType()
+    if not ammoType then return false end
+
+    local boxes, cartons = MagazineBag_Core.FindAmmoPackages(player, ammoType:getItemKey())
+
+    return #boxes > 0 or #cartons > 0
 end
 
-function MagazineBag_Core.ReloadMagazines(player)
+function MagazineBag_Core.ReloadMagazines(player, pass)
     if not player then return end
+    pass = pass or 1
 
     local magazines = MagazineBag_Core.FindReloadableMagazines(player)
     if #magazines == 0 then return end
 
-    local bulletBudget = MagazineBag_Core.CountSpareBullets(player, magazines[1].magazine)
-    if bulletBudget <= 0 then return end
-
     local playerInventory = player:getInventory()
     local itemKey = magazines[1].magazine:getAmmoType():getItemKey()
 
-    -- ISLoadBulletsInMagazine only takes bullets from the main inventory, so
-    -- move everything we plan to load out of nested containers in one pass
     local totalNeeded = 0
     for _, entry in ipairs(magazines) do
         local magazine = entry.magazine
         totalNeeded = totalNeeded + math.max(0, (magazine:getMaxAmmo() or 0) - (magazine:getCurrentAmmoCount() or 0))
     end
+    if totalNeeded <= 0 then return end
+
+    local bulletBudget = playerInventory:getItemCountRecurse(itemKey)
+
+    -- loose rounds may not fill every magazine, so open just enough boxes (and
+    -- cartons of boxes) to cover the rest before loading
+    if bulletBudget < totalNeeded and pass <= MAX_UNPACK_PASSES then
+        local boxes, cartons = MagazineBag_Core.FindAmmoPackages(player, itemKey)
+        local shortfall = totalNeeded - bulletBudget
+        local bulletsPerBox = boxes[1] and boxes[1].yield
+
+        for _, entry in ipairs(boxes) do
+            if shortfall <= 0 then break end
+            MagazineBag_Core.OpenAmmoPackage(player, entry.item)
+            bulletBudget = bulletBudget + entry.yield
+            shortfall = shortfall - entry.yield
+        end
+
+        local openedCarton = false
+        for _, entry in ipairs(cartons) do
+            if shortfall <= 0 then break end
+            MagazineBag_Core.OpenAmmoPackage(player, entry.item)
+            openedCarton = true
+            -- with no box on hand the rounds per box are unknown, so open one
+            -- carton and let the next pass measure what came out
+            shortfall = shortfall - (bulletsPerBox and bulletsPerBox * entry.yield or shortfall)
+        end
+
+        -- the boxes inside a carton have no inventory items yet, so hand the
+        -- planning back to a later pass instead of loading now
+        if openedCarton then
+            ISTimedActionQueue.add(MagazineBag_ContinueReload:new(player, pass + 1))
+            return
+        end
+    end
+
+    if bulletBudget <= 0 then return end
+
+    -- ISLoadBulletsInMagazine only takes bullets from the main inventory, so
+    -- move everything we plan to load out of nested containers in one pass
     local bullets = playerInventory:getSomeTypeRecurse(itemKey, math.min(bulletBudget, totalNeeded))
     ISInventoryPaneContextMenu.transferIfNeeded(player, bullets)
 

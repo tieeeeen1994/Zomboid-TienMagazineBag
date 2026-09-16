@@ -9,4 +9,6 @@ Supports Project Zomboid Build 41 and Build 42. The Build 41 version lives at th
 - "Store Incomplete & Empty Magazines" Radial Menu Entry: Hold the Reload key to gain access to the radial menu. Using this entry will move empty or incomplete firearm magazines to the assigned magazine bag.
 - "Fetch Full Magazines" Radial Menu Entry: Hold the Reload key to gain access to the radial menu. Using this entry will move full firearm magazines from the assigned magazine bag to your main inventory.
 - "Store All Magazines" Radial Menu Entry: Hold the Reload key to gain access to the radial menu. Using this entry will move all firearm magazines from your main inventory to assigned magazine bags.
-- "Reload Magazines" Radial Menu Entry: Hold the Reload key to gain access to the radial menu. Using this entry will attempt to reload all incomplete and empty magazines from the main inventory and magazine bags.
+- "Reload Magazines" Radial Menu Entry: Hold the Reload key to gain access to the radial menu. Using this entry will attempt to reload all incomplete and empty magazines from the main inventory and magazine bags. If there aren't enough loose rounds, it will open just enough boxes and cartons of the matching ammunition first.
+
+Each feature can be enabled and disabled in Settings.
