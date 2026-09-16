@@ -8,10 +8,12 @@ Hold your Reload key with a gun in hand for these entries:
 
 - **Store Spent Ammo** — stows empty and part-used magazines, plus any loose rounds your gun fires.
 - **Store All Ammo** — the same, with your full magazines as well.
-- **Reload Magazines** — refills every empty and part-used magazine, taking rounds from your inventory and from inside your bags.
+- **Reload Magazines** — ejects a part-used magazine from your gun, refills every magazine you are carrying using rounds from your inventory and your bags, then loads a full one back into the gun.
 - **Fetch Fresh Ammo** — takes fresh ammunition back out, stopping before the weight would leave you encumbered.
 
-Revolvers, shotguns, lever-actions and the hunting rifle are supported too, using loose rounds in place of magazines. Entries that only make sense for magazines stay hidden.
+Reloading works a magazine at a time, so the ammunition in your hands never piles up no matter how many you are filling.
+
+Revolvers, shotguns, lever-actions and the hunting rifle are supported too, storing and fetching their loose rounds. Entries that only make sense for magazines stay hidden.
 
 Containers that only accept certain items are respected. Assign a shoulder holster and it takes the two pistol magazines it will hold, while everything else carries on to your next bag.
 

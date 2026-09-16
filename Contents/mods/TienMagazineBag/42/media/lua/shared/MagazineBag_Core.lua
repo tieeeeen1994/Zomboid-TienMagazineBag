@@ -238,6 +238,32 @@ function MagazineBag_Core.HasReloadableMagazines(player)
     return false
 end
 
+-- Queues a move into the first bag that will take the item.
+--
+-- isItemAllowed matters as much as the weight check: a restricted container
+-- such as a shoulder holster takes pistol magazines only, yet its weight
+-- reduction leaves it reporting room for anything. Without the check it would
+-- claim items it then refuses, both starving the bag that would have accepted
+-- them and aborting the rest of the queue, since a rejected transfer stops and
+-- resets it.
+--
+-- hasRoomFor likewise only sees a bag as it is right now and nothing has moved
+-- yet while the queue is being built, so each bag is also charged for the
+-- weight it has already been promised.
+local function StoreInBag(player, item, inventory, magazineBags, reserved)
+    local weight = item:getActualWeight()
+
+    for index, bag in ipairs(magazineBags) do
+        local bagContainer = bag:getItemContainer()
+        if bagContainer and bagContainer:isItemAllowed(item)
+                and bagContainer:hasRoomFor(player, reserved[index] + weight) then
+            reserved[index] = reserved[index] + weight
+            ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, item, inventory, bagContainer))
+            return
+        end
+    end
+end
+
 function MagazineBag_Core.ReloadMagazines(player, pass)
     if not player then return end
     pass = pass or 1
@@ -258,6 +284,10 @@ function MagazineBag_Core.ReloadMagazines(player, pass)
 
     local magazines = MagazineBag_Core.FindReloadableMagazines(player)
     local playerInventory = player:getInventory()
+    local magazineBags = MagazineBag_Core.FindMagazineBags(player)
+
+    local reserved = {}
+    for index = 1, #magazineBags do reserved[index] = 0 end
 
     -- The gun is loaded at the end, once the spares are done, so whichever
     -- magazine goes in has been filled by then.
@@ -316,12 +346,17 @@ function MagazineBag_Core.ReloadMagazines(player, pass)
                         ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, magazine, entry.bagContainer, playerInventory))
                     end
                     ISTimedActionQueue.add(ISLoadBulletsInMagazine:new(player, magazine, toLoad))
-                    -- the one headed for the gun stays out
-                    if entry.bagContainer and magazine ~= insertMagazine then
-                        ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, magazine, playerInventory, entry.bagContainer))
-                    end
+
+                    -- A filled magazine is put away before the next one starts,
+                    -- so the weight of what has already been loaded does not
+                    -- follow the character through the rest of the sequence.
+                    -- The one headed for the gun stays in hand.
                     if magazine == insertMagazine then
                         insertAlreadyInHand = true
+                    elseif entry.bagContainer then
+                        ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, magazine, playerInventory, entry.bagContainer))
+                    else
+                        StoreInBag(player, magazine, playerInventory, magazineBags, reserved)
                     end
                 end
             end
@@ -335,32 +370,6 @@ function MagazineBag_Core.ReloadMagazines(player, pass)
             ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, insertMagazine, container, playerInventory))
         end
         ISTimedActionQueue.add(ISInsertMagazine:new(player, weapon, insertMagazine))
-    end
-end
-
--- Queues a move into the first bag that will take the item.
---
--- isItemAllowed matters as much as the weight check: a restricted container
--- such as a shoulder holster takes pistol magazines only, yet its weight
--- reduction leaves it reporting room for anything. Without the check it would
--- claim items it then refuses, both starving the bag that would have accepted
--- them and aborting the rest of the queue, since a rejected transfer stops and
--- resets it.
---
--- hasRoomFor likewise only sees a bag as it is right now and nothing has moved
--- yet while the queue is being built, so each bag is also charged for the
--- weight it has already been promised.
-local function StoreInBag(player, item, inventory, magazineBags, reserved)
-    local weight = item:getActualWeight()
-
-    for index, bag in ipairs(magazineBags) do
-        local bagContainer = bag:getItemContainer()
-        if bagContainer and bagContainer:isItemAllowed(item)
-                and bagContainer:hasRoomFor(player, reserved[index] + weight) then
-            reserved[index] = reserved[index] + weight
-            ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, item, inventory, bagContainer))
-            return
-        end
     end
 end
 
