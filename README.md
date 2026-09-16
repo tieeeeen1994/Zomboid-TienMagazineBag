@@ -1,14 +1,20 @@
-# Tien's Magazine Bag
+# Tien's Ammo Bags
 
-Supports Project Zomboid Build 41 and Build 42. The Build 41 version lives at the mod root (`Contents/mods/TienMagazineBag/media`), and the Build 42 version in `Contents/mods/TienMagazineBag/42`.
+Assign any bag, pouch or holster you are already wearing as an ammo bag, then move your ammunition in and out from the firearm radial menu.
 
-## Features
+To assign one, right click a worn item that can hold things and pick "Assign Ammo Bag". There are no new items to find or craft. Assign as many as you like.
 
-- Magazine Bag: This is not an actual item, but something that the player assigns to be able to use the features of this mod. Magazine Bags allow the features of the mod to determine where place empty or incomplete firearm magazines from the main inventory through a radial menu entry.
-- Assign a Magazine Bag: Right click one of your worn items that has a container support to be able to assign them as a magazine bag.
-- "Store Spent Ammo" Radial Menu Entry: Hold the Reload key to gain access to the radial menu. Using this entry will move empty or incomplete firearm magazines, along with any loose rounds for the held weapon, to the assigned magazine bag.
-- "Fetch Full Magazines" Radial Menu Entry: Hold the Reload key to gain access to the radial menu. Using this entry will move full firearm magazines from the assigned magazine bag to your main inventory.
-- "Store All Ammo" Radial Menu Entry: Hold the Reload key to gain access to the radial menu. Using this entry will move all firearm magazines and loose rounds for the held weapon from your main inventory to assigned magazine bags.
-- "Reload Magazines" Radial Menu Entry: Hold the Reload key to gain access to the radial menu. Using this entry will attempt to reload all incomplete and empty magazines from the main inventory and magazine bags.
+Hold your Reload key with a gun in hand for these entries:
 
-Each feature can be enabled and disabled in Settings.
+- **Store Spent Ammo** — stows empty and part-used magazines, plus any loose rounds your gun fires.
+- **Store All Ammo** — the same, with your full magazines as well.
+- **Reload Magazines** — refills every empty and part-used magazine, taking rounds from your inventory and from inside your bags.
+- **Fetch Fresh Ammo** — takes fresh ammunition back out, stopping before the weight would leave you encumbered.
+
+Revolvers, shotguns, lever-actions and the hunting rifle are supported too, using loose rounds in place of magazines. Entries that only make sense for magazines stay hidden.
+
+Containers that only accept certain items are respected. Assign a shoulder holster and it takes the two pistol magazines it will hold, while everything else carries on to your next bag.
+
+Each entry can be turned on or off, per player, in Settings.
+
+Supports Project Zomboid B41 (outdated) and B42.

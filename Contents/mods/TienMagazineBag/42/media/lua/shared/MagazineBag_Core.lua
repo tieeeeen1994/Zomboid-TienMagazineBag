@@ -23,11 +23,23 @@ function MagazineBag_Core.IsMagazineBag(item)
     return modData.isMagazineBag or false
 end
 
-function MagazineBag_Core.HasValidWeapon(player)
+-- Magazine-fed: pistols and the bolt-action rifles that take a magazine. Only
+-- these have magazines to store, fetch or reload.
+function MagazineBag_Core.HasMagazineWeapon(player)
     if not player then return false end
 
     local weapon = player:getPrimaryHandItem()
     return weapon and weapon:isRanged() and weapon.getMagazineType and weapon:getMagazineType()
+end
+
+-- Any firearm, magazine-fed or not. Revolvers, shotguns, lever-actions and the
+-- hunting rifle load loose rounds straight into the gun, so they have no
+-- magazines but their ammunition is still worth carrying in a bag.
+function MagazineBag_Core.HasAmmoWeapon(player)
+    if not player then return false end
+
+    local weapon = player:getPrimaryHandItem()
+    return weapon and weapon:isRanged() and weapon.getAmmoType and weapon:getAmmoType() ~= nil
 end
 
 function MagazineBag_Core.FindMagazineBags(player)
@@ -47,7 +59,7 @@ function MagazineBag_Core.FindMagazineBags(player)
 end
 
 function MagazineBag_Core.IsMagazine(item, player)
-    if not item or not MagazineBag_Core.HasValidWeapon(player) then return false end
+    if not item or not MagazineBag_Core.HasMagazineWeapon(player) then return false end
 
     local weapon = player:getPrimaryHandItem()
     local weaponMagType = weapon:getMagazineType()
@@ -62,7 +74,7 @@ end
 
 -- The round the held weapon fires, e.g. "Base.Bullets9mm"
 function MagazineBag_Core.GetAmmoItemType(player)
-    if not MagazineBag_Core.HasValidWeapon(player) then return nil end
+    if not MagazineBag_Core.HasAmmoWeapon(player) then return nil end
 
     local weapon = player:getPrimaryHandItem()
     local ammoType = weapon.getAmmoType and weapon:getAmmoType()
@@ -85,7 +97,7 @@ function MagazineBag_Core.IsMagazineFull(magazine)
 end
 
 function MagazineBag_Core.HasSpentAmmoInInventory(player)
-    if not MagazineBag_Core.HasValidWeapon(player) then return false end
+    if not MagazineBag_Core.HasAmmoWeapon(player) then return false end
 
     local inventory = player:getInventory()
     local items = inventory:getItems()
@@ -106,16 +118,17 @@ function MagazineBag_Core.HasSpentAmmoInInventory(player)
     return false
 end
 
+-- Only magazines separate "Store All Ammo" from "Store Spent Ammo", so without
+-- one the slice would just repeat the other
 function MagazineBag_Core.HasAmmoInInventory(player)
-    if not MagazineBag_Core.HasValidWeapon(player) then return false end
+    if not MagazineBag_Core.HasMagazineWeapon(player) then return false end
 
     local inventory = player:getInventory()
     local items = inventory:getItems()
-    local ammoItemType = MagazineBag_Core.GetAmmoItemType(player)
 
     for i = 0, items:size() - 1 do
         local item = items:get(i)
-        if item and (MagazineBag_Core.IsMagazine(item, player) or item:getFullType() == ammoItemType) then
+        if item and MagazineBag_Core.IsMagazine(item, player) then
             return true
         end
     end
@@ -123,10 +136,20 @@ function MagazineBag_Core.HasAmmoInInventory(player)
     return false
 end
 
-function MagazineBag_Core.HasFullMagazinesInBags(player)
-    if not MagazineBag_Core.HasValidWeapon(player) then return false end
+-- Loose rounds are only worth fetching for a gun that loads them directly. A
+-- magazine-fed gun wants magazines, and Reload Magazines already draws rounds
+-- out of the bags on its own without them being carried first.
+function MagazineBag_Core.GetFetchableRoundType(player)
+    if MagazineBag_Core.HasMagazineWeapon(player) then return nil end
+
+    return MagazineBag_Core.GetAmmoItemType(player)
+end
+
+function MagazineBag_Core.HasFreshAmmoInBags(player)
+    if not MagazineBag_Core.HasAmmoWeapon(player) then return false end
 
     local magazineBags = MagazineBag_Core.FindMagazineBags(player)
+    local roundItemType = MagazineBag_Core.GetFetchableRoundType(player)
 
     for _, bag in ipairs(magazineBags) do
         local bagContainer = bag:getItemContainer()
@@ -135,8 +158,13 @@ function MagazineBag_Core.HasFullMagazinesInBags(player)
 
             for i = 0, bagItems:size() - 1 do
                 local item = bagItems:get(i)
-                if item and MagazineBag_Core.IsMagazine(item, player) and MagazineBag_Core.IsMagazineFull(item) then
-                    return true
+                if item then
+                    if MagazineBag_Core.IsMagazine(item, player) and MagazineBag_Core.IsMagazineFull(item) then
+                        return true
+                    end
+                    if item:getFullType() == roundItemType then
+                        return true
+                    end
                 end
             end
         end
@@ -149,7 +177,7 @@ end
 -- main inventory first, then each worn magazine bag
 function MagazineBag_Core.FindReloadableMagazines(player)
     local magazines = {}
-    if not MagazineBag_Core.HasValidWeapon(player) then return magazines end
+    if not MagazineBag_Core.HasMagazineWeapon(player) then return magazines end
 
     local items = player:getInventory():getItems()
     for i = 0, items:size() - 1 do
@@ -306,13 +334,20 @@ function MagazineBag_Core.StoreAmmoToBag(player, includeFull)
     end
 end
 
-function MagazineBag_Core.FetchFullMagazinesFromBag(player)
+function MagazineBag_Core.FetchFreshAmmoFromBag(player)
     if not player then return end
 
     local magazineBags = MagazineBag_Core.FindMagazineBags(player)
     local playerInventory = player:getInventory()
+    local roundItemType = MagazineBag_Core.GetFetchableRoundType(player)
 
     if #magazineBags == 0 then return end
+
+    -- Fetch only what the character can still carry unencumbered. A bag reduces
+    -- the weight of what it holds, so every magazine taken out costs more than
+    -- it did inside, and hasRoomFor sees the inventory as it is now rather than
+    -- as it will be once the queue has run -- hence the running total.
+    local fetched = 0
 
     for _, bag in ipairs(magazineBags) do
         local bagContainer = bag:getItemContainer()
@@ -321,8 +356,14 @@ function MagazineBag_Core.FetchFullMagazinesFromBag(player)
 
             for i = bagItems:size() - 1, 0, -1 do
                 local item = bagItems:get(i)
-                if item and MagazineBag_Core.IsMagazine(item, player) and MagazineBag_Core.IsMagazineFull(item) then
-                    if playerInventory:hasRoomFor(player, item) then
+                local wanted = item and
+                    ((MagazineBag_Core.IsMagazine(item, player) and MagazineBag_Core.IsMagazineFull(item))
+                        or item:getFullType() == roundItemType)
+
+                if wanted then
+                    local weight = item:getActualWeight()
+                    if playerInventory:hasRoomFor(player, fetched + weight) then
+                        fetched = fetched + weight
                         ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, item, bagContainer, playerInventory, "BoxOfRoundsOpenOne"))
                     end
                 end
