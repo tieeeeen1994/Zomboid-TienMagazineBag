@@ -2,15 +2,11 @@ MagazineBag_Options = {}
 
 local OPTIONS_ID = "TienMagazineBag"
 
--- Keys are deliberately not derived from the entry labels: renaming an entry
--- must not silently reset what players have already turned off.
 MagazineBag_Options.STORE_SPENT = "storeSpentAmmo"
 MagazineBag_Options.STORE_ALL = "storeAllAmmo"
 MagazineBag_Options.RELOAD = "reloadMagazines"
 MagazineBag_Options.FETCH_FRESH = "fetchFreshAmmo"
 
--- Anything that cannot be read counts as enabled: a setting the game has not
--- registered or loaded should never be the reason an entry goes missing.
 function MagazineBag_Options.IsEnabled(id)
     if not PZAPI or not PZAPI.ModOptions then return true end
 
@@ -21,9 +17,6 @@ function MagazineBag_Options.IsEnabled(id)
     return option:getValue() ~= false
 end
 
--- B42 ships PZAPI.ModOptions, and the main options screen only builds its mod
--- panel if something has registered by the time that screen is created. That
--- happens before OnGameStart, so registration runs as this file loads.
 if PZAPI and PZAPI.ModOptions then
     local options = PZAPI.ModOptions:create(OPTIONS_ID, "Tien's Ammo Bags")
 
