@@ -432,15 +432,24 @@ function MagazineBag_Core.FetchFreshAmmoFromBag(player)
 
     if #magazineBags == 0 then return end
 
-    -- Fetch only what the character can still carry unencumbered. A bag reduces
-    -- the weight of what it holds, so every magazine taken out costs more than
-    -- it did inside, and hasRoomFor sees the inventory as it is now rather than
-    -- as it will be once the queue has run -- hence the running total.
+    -- Fetch only what the character can still carry unencumbered. hasRoomFor is
+    -- no help there: on the main inventory it checks the hard capacity, well
+    -- above the point where Heavy Load sets in, which is the inventory's
+    -- getMaxWeight (the same limit ISHotbar tests against).
+    --
+    -- Moving an item out of a worn bag does not add its full weight, since it
+    -- was already counted -- just discounted by the bag's weight reduction. So
+    -- each item costs only the part of its weight the bag was hiding, and the
+    -- running total stands in for moves the queue has not run yet.
+    local unlimited = player:isUnlimitedCarry()
+    local budget = playerInventory:getMaxWeight() - playerInventory:getCapacityWeight()
     local fetched = 0
+    local added = 0
 
     for _, bag in ipairs(magazineBags) do
         local bagContainer = bag:getItemContainer()
         if bagContainer then
+            local reduction = (bagContainer:getWeightReduction() or 0) / 100
             local bagItems = bagContainer:getItems()
 
             for i = bagItems:size() - 1, 0, -1 do
@@ -451,8 +460,11 @@ function MagazineBag_Core.FetchFreshAmmoFromBag(player)
 
                 if wanted then
                     local weight = item:getActualWeight()
-                    if playerInventory:hasRoomFor(player, fetched + weight) then
+                    local cost = weight * reduction
+                    if (unlimited or added + cost <= budget)
+                            and playerInventory:hasRoomFor(player, fetched + weight) then
                         fetched = fetched + weight
+                        added = added + cost
                         ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, item, bagContainer, playerInventory))
                     end
                 end
