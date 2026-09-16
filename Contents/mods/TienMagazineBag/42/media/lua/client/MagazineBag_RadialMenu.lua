@@ -34,15 +34,15 @@ local function magazineBagRadialMenu()
             return result
         end
 
-        if MagazineBag_Core.HasEmptyMagazinesInInventory(player) then
-            menu:addSlice("Store Incomplete & Empty Magazines", storeIcon, function()
-                MagazineBag_Core.StoreAllMagazinesToBag(player)
+        if MagazineBag_Core.HasSpentAmmoInInventory(player) then
+            menu:addSlice("Store Spent Ammo", storeIcon, function()
+                MagazineBag_Core.StoreAmmoToBag(player)
             end)
         end
 
-        if MagazineBag_Core.HasMagazinesInInventory(player) then
-            menu:addSlice("Store All Magazines", stowAllIcon, function()
-                MagazineBag_Core.StoreAllMagazinesToBag(player, true)
+        if MagazineBag_Core.HasAmmoInInventory(player) then
+            menu:addSlice("Store All Ammo", stowAllIcon, function()
+                MagazineBag_Core.StoreAmmoToBag(player, true)
             end)
         end
 
