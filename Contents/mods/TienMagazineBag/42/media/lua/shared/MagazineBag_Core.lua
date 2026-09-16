@@ -248,11 +248,11 @@ function MagazineBag_Core.ReloadMagazines(player)
             -- bag magazines are pulled out to load (the action requires the
             -- main inventory), then returned to their bag
             if entry.bagContainer then
-                ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, magazine, entry.bagContainer, playerInventory, "BoxOfRoundsOpenOne"))
+                ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, magazine, entry.bagContainer, playerInventory))
             end
             ISTimedActionQueue.add(ISLoadBulletsInMagazine:new(player, magazine, toLoad))
             if entry.bagContainer then
-                ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, magazine, playerInventory, entry.bagContainer, "PutItemInBag"))
+                ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, magazine, playerInventory, entry.bagContainer))
             end
         end
     end
@@ -278,7 +278,7 @@ local function StoreInBag(player, item, inventory, magazineBags, reserved)
         if bagContainer and bagContainer:isItemAllowed(item)
                 and bagContainer:hasRoomFor(player, reserved[index] + weight) then
             reserved[index] = reserved[index] + weight
-            ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, item, inventory, bagContainer, "PutItemInBag"))
+            ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, item, inventory, bagContainer))
             return
         end
     end
@@ -364,7 +364,7 @@ function MagazineBag_Core.FetchFreshAmmoFromBag(player)
                     local weight = item:getActualWeight()
                     if playerInventory:hasRoomFor(player, fetched + weight) then
                         fetched = fetched + weight
-                        ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, item, bagContainer, playerInventory, "BoxOfRoundsOpenOne"))
+                        ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, item, bagContainer, playerInventory))
                     end
                 end
             end
