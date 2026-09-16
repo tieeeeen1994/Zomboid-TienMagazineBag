@@ -16,8 +16,6 @@ local function magazineBagRadialMenu()
     ISFirearmRadialMenu.fillMenu = function(data)
         local result = original(data)
 
-        -- B42: fillMenu is an instance method; data is the menu object with
-        -- character/playerNum set in ISFirearmRadialMenu:new
         local player = data and data.character
         local playerNum = (data and data.playerNum) or 0
 

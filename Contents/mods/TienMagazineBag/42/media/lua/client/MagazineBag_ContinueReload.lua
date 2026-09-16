@@ -1,9 +1,5 @@
 require "TimedActions/ISBaseTimedAction"
 
--- ISEjectMagazine builds the ejected magazine with instanceItem() when its
--- animation finishes, so the item does not exist while the reload is being
--- planned and cannot be queued for refilling. This sits after the eject and
--- runs the planning again, by which point it is an ordinary spare.
 MagazineBag_ContinueReload = ISBaseTimedAction:derive("MagazineBag_ContinueReload")
 
 function MagazineBag_ContinueReload:isValid()
