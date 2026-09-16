@@ -210,51 +210,131 @@ function MagazineBag_Core.CountSpareBullets(player, magazine)
 end
 
 function MagazineBag_Core.HasReloadableMagazines(player)
+    if not MagazineBag_Core.HasMagazineWeapon(player) then return false end
+
+    local weapon = player:getPrimaryHandItem()
+
+    -- an empty gun with a magazine to hand is worth the entry on its own
+    if not weapon:isContainsClip() then
+        return weapon:getBestMagazine(player) ~= nil
+    end
+
     local magazines = MagazineBag_Core.FindReloadableMagazines(player)
-    if #magazines == 0 then return false end
-    return MagazineBag_Core.CountSpareBullets(player, magazines[1].magazine) > 0
+    if #magazines > 0 and MagazineBag_Core.CountSpareBullets(player, magazines[1].magazine) > 0 then
+        return true
+    end
+
+    -- a part-used magazine in the gun can be swapped for a spare, or ejected
+    -- and topped up from loose rounds
+    if (weapon:getCurrentAmmoCount() or 0) < (weapon:getMaxAmmo() or 0) then
+        if weapon:getBestMagazine(player) then return true end
+
+        local ammoItemType = MagazineBag_Core.GetAmmoItemType(player)
+        if ammoItemType and player:getInventory():getItemCountRecurse(ammoItemType) > 0 then
+            return true
+        end
+    end
+
+    return false
 end
 
-function MagazineBag_Core.ReloadMagazines(player)
+function MagazineBag_Core.ReloadMagazines(player, pass)
     if not player then return end
+    pass = pass or 1
+
+    local isMagazineWeapon = MagazineBag_Core.HasMagazineWeapon(player)
+    local weapon = isMagazineWeapon and player:getPrimaryHandItem() or nil
+
+    -- A part-used magazine in the gun deserves topping up like any other, but
+    -- ISEjectMagazine only creates the item once its animation has run, so it
+    -- cannot be queued for refilling here. Eject, then plan again: the second
+    -- pass sees it as an ordinary spare.
+    if weapon and pass < 2 and weapon:isContainsClip()
+            and (weapon:getCurrentAmmoCount() or 0) < (weapon:getMaxAmmo() or 0) then
+        ISTimedActionQueue.add(ISEjectMagazine:new(player, weapon))
+        ISTimedActionQueue.add(MagazineBag_ContinueReload:new(player, pass + 1))
+        return
+    end
 
     local magazines = MagazineBag_Core.FindReloadableMagazines(player)
-    if #magazines == 0 then return end
-
-    local bulletBudget = MagazineBag_Core.CountSpareBullets(player, magazines[1].magazine)
-    if bulletBudget <= 0 then return end
-
     local playerInventory = player:getInventory()
-    local itemKey = magazines[1].magazine:getAmmoType():getItemKey()
 
-    -- ISLoadBulletsInMagazine only takes bullets from the main inventory, so
-    -- move everything we plan to load out of nested containers in one pass
-    local totalNeeded = 0
-    for _, entry in ipairs(magazines) do
-        local magazine = entry.magazine
-        totalNeeded = totalNeeded + math.max(0, (magazine:getMaxAmmo() or 0) - (magazine:getCurrentAmmoCount() or 0))
+    -- The gun is loaded at the end, once the spares are done, so whichever
+    -- magazine goes in has been filled by then.
+    local insertMagazine = nil
+    local insertAlreadyInHand = false
+    if weapon and not weapon:isContainsClip() then
+        insertMagazine = weapon:getBestMagazine(player)
     end
-    local bullets = playerInventory:getSomeTypeRecurse(itemKey, math.min(bulletBudget, totalNeeded))
-    ISInventoryPaneContextMenu.transferIfNeeded(player, bullets)
 
-    for _, entry in ipairs(magazines) do
-        if bulletBudget <= 0 then break end
-        local magazine = entry.magazine
-        local needed = (magazine:getMaxAmmo() or 0) - (magazine:getCurrentAmmoCount() or 0)
-        if needed > 0 and (not entry.bagContainer or playerInventory:hasRoomFor(player, magazine)) then
-            local toLoad = math.min(needed, bulletBudget)
-            bulletBudget = bulletBudget - toLoad
+    if #magazines > 0 then
+        local bulletBudget = MagazineBag_Core.CountSpareBullets(player, magazines[1].magazine)
+        local itemKey = magazines[1].magazine:getAmmoType():getItemKey()
 
-            -- bag magazines are pulled out to load (the action requires the
-            -- main inventory), then returned to their bag
-            if entry.bagContainer then
-                ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, magazine, entry.bagContainer, playerInventory))
-            end
-            ISTimedActionQueue.add(ISLoadBulletsInMagazine:new(player, magazine, toLoad))
-            if entry.bagContainer then
-                ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, magazine, playerInventory, entry.bagContainer))
+        local totalNeeded = 0
+        for _, entry in ipairs(magazines) do
+            local magazine = entry.magazine
+            totalNeeded = totalNeeded + math.max(0, (magazine:getMaxAmmo() or 0) - (magazine:getCurrentAmmoCount() or 0))
+        end
+
+        if bulletBudget > 0 then
+            -- Rounds are fetched one magazine at a time rather than all at once.
+            -- A bag discounts the weight of what it holds, so a whole reload's
+            -- worth of ammunition in hand can push the character over their
+            -- carry weight -- yet every magazine still needs filling. Loading
+            -- consumes the rounds and the magazine goes straight back in the
+            -- bag, so only one magazine's worth is ever being carried and the
+            -- weight never builds up.
+            --
+            -- getSomeTypeRecurse is called once and its result handed out in
+            -- slices: calling it per magazine would return the same rounds each
+            -- time, since nothing has moved yet while the queue is being built.
+            local bullets = playerInventory:getSomeTypeRecurse(itemKey, math.min(bulletBudget, totalNeeded))
+            local taken = 0
+
+            for _, entry in ipairs(magazines) do
+                if taken >= bullets:size() then break end
+                local magazine = entry.magazine
+                local needed = (magazine:getMaxAmmo() or 0) - (magazine:getCurrentAmmoCount() or 0)
+                if needed > 0 then
+                    local toLoad = math.min(needed, bullets:size() - taken)
+
+                    -- ISLoadBulletsInMagazine only draws from the main
+                    -- inventory. Queued through our own action rather than
+                    -- transferIfNeeded, which uses the vanilla one: a refusal
+                    -- there would reset the queue and abandon the reload.
+                    for _ = 1, toLoad do
+                        local bullet = bullets:get(taken)
+                        taken = taken + 1
+                        if luautils.haveToBeTransfered(player, bullet) then
+                            ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, bullet, bullet:getContainer(), playerInventory))
+                        end
+                    end
+
+                    -- bag magazines are pulled out to load, then returned
+                    if entry.bagContainer then
+                        ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, magazine, entry.bagContainer, playerInventory))
+                    end
+                    ISTimedActionQueue.add(ISLoadBulletsInMagazine:new(player, magazine, toLoad))
+                    -- the one headed for the gun stays out
+                    if entry.bagContainer and magazine ~= insertMagazine then
+                        ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, magazine, playerInventory, entry.bagContainer))
+                    end
+                    if magazine == insertMagazine then
+                        insertAlreadyInHand = true
+                    end
+                end
             end
         end
+    end
+
+    if insertMagazine then
+        -- ISInsertMagazine wants it in the main inventory, not in a bag
+        local container = insertMagazine:getContainer()
+        if not insertAlreadyInHand and container and container ~= playerInventory then
+            ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, insertMagazine, container, playerInventory))
+        end
+        ISTimedActionQueue.add(ISInsertMagazine:new(player, weapon, insertMagazine))
     end
 end
 

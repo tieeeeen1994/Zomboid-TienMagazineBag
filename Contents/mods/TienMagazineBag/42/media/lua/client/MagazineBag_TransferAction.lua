@@ -34,17 +34,19 @@ function MagazineBag_TransferAction:resolveDestination()
     end
 end
 
+-- Never reports invalid. A failing action calls stop(), which resets the whole
+-- timed action queue, so one move the game turns away would cancel every step
+-- of the reload still queued behind it. dontAdd is vanilla's own no-op path --
+-- start() zeroes the timer and transferItem() moves nothing -- so the action
+-- completes having done nothing and the rest of the sequence carries on.
 function MagazineBag_TransferAction:isValid()
     self:resolveDestination()
 
-    -- dontAdd is the vanilla no-op path: start() zeroes the timer and
-    -- transferItem() moves nothing, so the action completes and the queue lives
-    if self.noBagLeft then
+    if self.noBagLeft or not ISInventoryTransferAction.isValid(self) then
         self.dontAdd = true
-        return true
     end
 
-    return ISInventoryTransferAction.isValid(self)
+    return true
 end
 
 function MagazineBag_TransferAction:start()
