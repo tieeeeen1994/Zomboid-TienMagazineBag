@@ -7,7 +7,7 @@ The Lua source has no comments on purpose. The reasoning behind non-obvious code
 ## MagazineBag_Core.lua
 
 ### Bag assignment (multiplayer)
-- `AssignMagazineBag` sets `modData.isMagazineBag`, calls `syncItemModData`, and sends the `assignBag` client command. In B42 MP the inventory is server-authoritative, so the server's copy of the item has to get the flag too or the assignment is lost on logout. `MagazineBag_Server.lua` handles that command.
+- `AssignMagazineBag` sets `modData.isMagazineBag` locally and sends the `assignBag` client command. In B42 MP the inventory is server-authoritative, so the server's copy of the item has to get the flag too or the assignment is lost on logout. `MagazineBag_Server.lua` handles that command, then calls `syncItemModData` to push the server's copy back to the owner. That is the direction vanilla uses it in (from `complete()`, e.g. `ISChangeFishingRodEquip`). The client doesn't call it: it does nothing useful there, and could pull back the server's copy from before the change.
 
 ### Feature toggles
 The Gunworks features each have their own tick box under "Gunworks Gang" in `MagazineBag_Options.lua`, on by default: `gunworksSupport`, `ammoAssignment`, `speedloaderReload`. `IsFeatureEnabled(id)` is the one gate. Core spells the IDs as string literals, because `MagazineBag_Options` is client-only and would be nil on the server; keep them in sync with the option keys. The Open Boxes entries are ordinary radial entries, checked in the radial menu like the others.
@@ -124,4 +124,4 @@ Guns of Marz replaces `ISToolTipInv:render` wholesale when its file loads. So th
 In B42, `fillMenu` is an instance method. Its data is the menu object, with `character`/`playerNum` set in `ISFirearmRadialMenu:new`.
 
 ## MagazineBag_Server.lua
-In B42 MP the server's copy of the inventory is what gets saved. Bag assignments made client-side have to be applied here too, or they vanish on logout.
+In B42 MP the server's copy of the inventory is what gets saved. Bag and ammo assignments made client-side have to be applied here too, or they vanish on logout. The item is found with `getItemWithIDRecursiv`, so a magazine in a worn bag is found as well. An earlier hand-written search called `getItemContainer()` on every item it passed, but only container items have that method in B42. Any other item threw an error, so assignments to magazines in bags never reached the server. They then disappeared on relog, and after any server update to the item.
