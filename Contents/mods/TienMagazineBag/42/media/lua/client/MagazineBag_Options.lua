@@ -8,9 +8,6 @@ MagazineBag_Options.RELOAD = "reloadMagazines"
 MagazineBag_Options.RELOAD_BOXES = "reloadMagazinesOpenBoxes"
 MagazineBag_Options.FETCH_FRESH = "fetchFreshAmmo"
 MagazineBag_Options.FETCH_BOXES = "fetchFreshAmmoOpenBoxes"
-MagazineBag_Options.GUNWORKS = "gunworksSupport"
-MagazineBag_Options.AMMO_ASSIGNMENT = "ammoAssignment"
-MagazineBag_Options.SPEEDLOADER_RELOAD = "speedloaderReload"
 
 local DEFAULTS = {
     [MagazineBag_Options.RELOAD_BOXES] = false,
@@ -47,16 +44,4 @@ if PZAPI and PZAPI.ModOptions then
         "Takes fresh ammunition back out of your ammo bags.")
     options:addTickBox(MagazineBag_Options.FETCH_BOXES, "Fetch Fresh Ammo (Open Boxes)", false,
         "As Fetch Fresh Ammo, but for guns that load loose rounds it opens ammo boxes when you don't have a full load of rounds. Only shown when a box would be opened.")
-
-    options:addSeparator()
-    options:addTitle("Gunworks Gang")
-    options:addDescription("Only matters for guns from packs built on Gunworks Gang.")
-    options:addSeparator()
-
-    options:addTickBox(MagazineBag_Options.GUNWORKS, "Gunworks Gang Support", true,
-        "Handles every magazine a gun takes, speedloaders and stripper clips, and every kind of round.")
-    options:addTickBox(MagazineBag_Options.AMMO_ASSIGNMENT, "Assign Ammo", true,
-        "Needs Gunworks Gang Support. Right click a magazine, speedloader or loose-round gun to choose the one round it is filled with, including when you use your Reload key.")
-    options:addTickBox(MagazineBag_Options.SPEEDLOADER_RELOAD, "Reload Speedloaders Loads the Revolver", true,
-        "Needs Gunworks Gang Support. Reload Speedloaders also loads the revolver in your hand before refilling your speedloaders.")
 end

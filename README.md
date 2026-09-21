@@ -28,7 +28,4 @@ With a B42 gun pack built on Gunworks Gang, you also get:
 - **Speedloaders and stripper clips** — stored, refilled and fetched like magazines. Hold a revolver that takes them and Reload Magazines becomes **Reload Speedloaders**, which loads the revolver, then refills every speedloader you are carrying.
 
 To choose which round a magazine, speedloader, revolver, shotgun or lever-action is filled with, right click it and pick "Assign Ammo". Its tooltip shows your choice, and a magazine keeps it while it is in your gun. Anything assigned only ever takes its own round, whether you reload from the radial menu or with your Reload key. If you run out of that round it waits, rather than taking something else. Speedloaders without a round of their own follow the revolver in your hand. Pick "Unassign Ammo" to go back to filling it with whatever rounds you have.
-
-Each of these can be turned off under Gunworks Gang in Settings.
-
 Supports Project Zomboid B41 (outdated) and B42.

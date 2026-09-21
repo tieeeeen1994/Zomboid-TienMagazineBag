@@ -76,13 +76,17 @@ local function BoxCost(player, box)
     return box:getActualWeight() * (container:getWeightReduction() or 0) / 100
 end
 
-function MagazineBag_Boxes.Plan(player, demands, budget)
+function MagazineBag_Boxes.Plan(player, demands, options)
+    options = options or {}
     local inventory = player:getInventory()
+    local budget = options.budget
     local available, used, planned = {}, {}, {}
+
+    for id in pairs(options.skip or {}) do used[id] = true end
 
     local function count(roundType)
         if available[roundType] == nil then
-            available[roundType] = inventory:getItemCountRecurse(roundType)
+            available[roundType] = options.looseUsed and 0 or inventory:getItemCountRecurse(roundType)
         end
         return available[roundType]
     end
@@ -126,10 +130,22 @@ function MagazineBag_Boxes.HasBoxesFor(player, demands)
     return #MagazineBag_Boxes.Plan(player, demands) > 0
 end
 
+local function OpenBox(player, entry)
+    ISInventoryPaneContextMenu.OnNewCraft(entry.box, entry.recipe, player:getPlayerNum(), false)
+end
+
 function MagazineBag_Boxes.Open(player, demands, budget)
-    local planned = MagazineBag_Boxes.Plan(player, demands, budget)
+    local planned = MagazineBag_Boxes.Plan(player, demands, { budget = budget })
     for _, entry in ipairs(planned) do
-        ISInventoryPaneContextMenu.OnNewCraft(entry.box, entry.recipe, player:getPlayerNum(), false)
+        OpenBox(player, entry)
     end
     return #planned > 0
+end
+
+function MagazineBag_Boxes.OpenOne(player, demands, skip)
+    local entry = MagazineBag_Boxes.Plan(player, demands, { looseUsed = true, skip = skip })[1]
+    if not entry then return nil end
+
+    OpenBox(player, entry)
+    return entry.box:getID()
 end

@@ -2,26 +2,15 @@ MagazineBag_Core = {}
 
 MagazineBag_Core.AMMO_KEY = "MagazineBag_AmmoType"
 
-function MagazineBag_Core.IsFeatureEnabled(id)
-    if isServer() then return true end
-    return MagazineBag_Options ~= nil and MagazineBag_Options.IsEnabled(id)
-end
-
 local gunworksModules = {}
 
-local function RequireGunworks(name)
+local function GetGunworks(name)
     if gunworksModules[name] == nil then
         gunworksModules[name] = getActivatedMods():contains("SWMG") and require("WeaponSystems/Utils/" .. name) or false
     end
     return gunworksModules[name] or nil
 end
 
-local function GetGunworks(name)
-    if not MagazineBag_Core.IsFeatureEnabled("gunworksSupport") then return nil end
-    return RequireGunworks(name)
-end
-
-MagazineBag_Core.RequireGunworks = RequireGunworks
 MagazineBag_Core.GetGunworks = GetGunworks
 
 local function GetGunworksAmmo()
@@ -62,7 +51,6 @@ end
 
 function MagazineBag_Core.GetAssignedAmmo(item)
     if not item or not item:hasModData() then return nil end
-    if not MagazineBag_Core.IsFeatureEnabled("ammoAssignment") then return nil end
     local roundType = item:getModData()[MagazineBag_Core.AMMO_KEY]
     if not roundType then return nil end
 
@@ -166,6 +154,12 @@ end
 
 local function CanLoadGun(weapon)
     return not weapon:isJammed() and (weapon:getCurrentAmmoCount() or 0) < (weapon:getMaxAmmo() or 0)
+end
+
+local function RevolverHasRounds(player, revolver)
+    if MagazineBag_Core.CountSpareBullets(player, revolver) > 0 then return true end
+    return (revolver:getCurrentAmmoCount() or 0) == 0
+        and GetGunworks("SpeedLoader").GetBestSpeedLoaderForGun(player, revolver) ~= nil
 end
 
 function MagazineBag_Core.GetBestMagazine(player, weapon)
@@ -401,12 +395,8 @@ function MagazineBag_Core.HasReloadableMagazines(player)
         if MagazineBag_Core.CountSpareBullets(player, weapon) > 0 then return true end
     end
 
-    if not isMagazineWeapon and CanLoadGun(weapon) and MagazineBag_Core.IsFeatureEnabled("speedloaderReload") then
-        if MagazineBag_Core.CountSpareBullets(player, weapon) > 0 then return true end
-        if (weapon:getCurrentAmmoCount() or 0) == 0
-                and GetGunworks("SpeedLoader").GetBestSpeedLoaderForGun(player, weapon) then
-            return true
-        end
+    if not isMagazineWeapon and CanLoadGun(weapon) and RevolverHasRounds(player, weapon) then
+        return true
     end
 
     return false
@@ -441,7 +431,7 @@ function MagazineBag_Core.GetReloadDemands(player)
     end
 
     local weapon = GetRangedWeapon(player)
-    if weapon and ((MagazineBag_Core.HasSpeedLoaderWeapon(player) and MagazineBag_Core.IsFeatureEnabled("speedloaderReload"))
+    if weapon and (MagazineBag_Core.HasSpeedLoaderWeapon(player)
             or (MagazineBag_Core.HasMagazineWeapon(player) and weapon:isContainsClip())) then
         add(weapon, (weapon:getMaxAmmo() or 0) - (weapon:getCurrentAmmoCount() or 0))
     end
@@ -530,14 +520,9 @@ local function ChooseInsertMagazine(player, weapon, reloadable)
     return best
 end
 
-function MagazineBag_Core.ReloadMagazines(player, pass, openBoxes)
+function MagazineBag_Core.ReloadMagazines(player, pass, openedBoxes)
     if not player then return end
     pass = pass or 1
-
-    if openBoxes and MagazineBag_Boxes.Open(player, MagazineBag_Core.GetReloadDemands(player)) then
-        ISTimedActionQueue.add(MagazineBag_ContinueReload:new(player, pass))
-        return
-    end
 
     local isMagazineWeapon = MagazineBag_Core.HasMagazineWeapon(player)
     local weapon = isMagazineWeapon and player:getPrimaryHandItem() or nil
@@ -545,15 +530,27 @@ function MagazineBag_Core.ReloadMagazines(player, pass, openBoxes)
     if weapon and pass < 2 and weapon:isContainsClip()
             and (weapon:getCurrentAmmoCount() or 0) < (weapon:getMaxAmmo() or 0) then
         ISTimedActionQueue.add(ISEjectMagazine:new(player, weapon))
-        ISTimedActionQueue.add(MagazineBag_ContinueReload:new(player, pass + 1))
+        ISTimedActionQueue.add(MagazineBag_ContinueReload:new(player, pass + 1, openedBoxes))
         return
     end
 
-    local revolver = MagazineBag_Core.HasSpeedLoaderWeapon(player)
-        and MagazineBag_Core.IsFeatureEnabled("speedloaderReload") and player:getPrimaryHandItem() or nil
+    local revolver = MagazineBag_Core.HasSpeedLoaderWeapon(player) and player:getPrimaryHandItem() or nil
     if revolver and pass < 2 and CanLoadGun(revolver) then
+        if openedBoxes and not RevolverHasRounds(player, revolver) then
+            local demand = {
+                needed = (revolver:getMaxAmmo() or 0) - (revolver:getCurrentAmmoCount() or 0),
+                roundTypes = MagazineBag_Core.GetReloadRoundTypes(player, revolver),
+            }
+            local boxId = MagazineBag_Boxes.OpenOne(player, { demand }, openedBoxes)
+            if boxId then
+                openedBoxes[boxId] = true
+                ISTimedActionQueue.add(MagazineBag_ContinueReload:new(player, pass, openedBoxes))
+                return
+            end
+        end
+
         ISReloadWeaponAction.BeginAutomaticReload(player, revolver)
-        ISTimedActionQueue.add(MagazineBag_ContinueReload:new(player, pass + 1))
+        ISTimedActionQueue.add(MagazineBag_ContinueReload:new(player, pass + 1, openedBoxes))
         return
     end
 
@@ -602,9 +599,22 @@ function MagazineBag_Core.ReloadMagazines(player, pass, openBoxes)
         end
     end
 
+    local shortfall = {}
+    if openedBoxes then
+        for _, entry in ipairs(magazines) do
+            local short = entry.needed
+            for _, load in ipairs(entry.loads) do short = short - load.count end
+            if short > 0 then
+                table.insert(shortfall, { needed = short, roundTypes = entry.roundTypes })
+            end
+        end
+    end
+    local moreBoxes = #shortfall > 0
+        and MagazineBag_Boxes.Plan(player, shortfall, { looseUsed = true, skip = openedBoxes })[1] ~= nil
+
     local insertMagazine = nil
     local insertAlreadyInHand = false
-    if weapon and not weapon:isContainsClip() then
+    if weapon and not weapon:isContainsClip() and not moreBoxes then
         insertMagazine = ChooseInsertMagazine(player, weapon, magazines)
     end
 
@@ -648,6 +658,14 @@ function MagazineBag_Core.ReloadMagazines(player, pass, openBoxes)
             ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, insertMagazine, container, playerInventory))
         end
         ISTimedActionQueue.add(ISInsertMagazine:new(player, weapon, insertMagazine))
+    end
+
+    if moreBoxes then
+        local boxId = MagazineBag_Boxes.OpenOne(player, shortfall, openedBoxes)
+        if boxId then
+            openedBoxes[boxId] = true
+            ISTimedActionQueue.add(MagazineBag_ContinueReload:new(player, math.max(pass, 2), openedBoxes))
+        end
     end
 end
 
