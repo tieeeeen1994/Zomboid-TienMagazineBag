@@ -29,7 +29,7 @@ if PZAPI and PZAPI.ModOptions then
     options:addTickBox(MagazineBag_Options.STORE_ALL, "Store All Ammo", true,
         "As above, but full magazines go in as well.")
     options:addTickBox(MagazineBag_Options.RELOAD, "Reload Magazines", true,
-        "Refills every empty and part-used magazine you are carrying.")
+        "Refills every empty and part-used magazine you are carrying. With a speedloader revolver it reloads the revolver, then refills your speedloaders.")
     options:addTickBox(MagazineBag_Options.FETCH_FRESH, "Fetch Fresh Ammo", true,
         "Takes fresh ammunition back out of your ammo bags.")
 end

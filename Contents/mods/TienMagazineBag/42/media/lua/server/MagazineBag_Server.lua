@@ -22,6 +22,11 @@ local function onClientCommand(module, command, player, args)
         if item then
             item:getModData().isMagazineBag = args.value or false
         end
+    elseif command == "assignAmmo" and args and args.itemId then
+        local item = findItemById(player:getInventory(), args.itemId)
+        if item then
+            item:getModData().MagazineBag_AmmoType = type(args.value) == "string" and args.value or nil
+        end
     end
 end
 

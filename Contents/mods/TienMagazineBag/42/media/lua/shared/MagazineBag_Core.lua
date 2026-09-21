@@ -1,17 +1,102 @@
 MagazineBag_Core = {}
 
+MagazineBag_Core.AMMO_KEY = "MagazineBag_AmmoType"
+
+local gunworksModules = {}
+
+local function GetGunworks(name)
+    if gunworksModules[name] == nil then
+        gunworksModules[name] = getActivatedMods():contains("SWMG") and require("WeaponSystems/Utils/" .. name) or false
+    end
+    return gunworksModules[name] or nil
+end
+
+MagazineBag_Core.GetGunworks = GetGunworks
+
+local function GetGunworksAmmo()
+    return GetGunworks("Ammo")
+end
+
+local function SendModData(player, item, command, value)
+    if not player then return end
+    if syncItemModData then
+        syncItemModData(player, item)
+    end
+    if isClient() then
+        sendClientCommand(player, "TienMagazineBag", command, { itemId = item:getID(), value = value })
+    end
+end
+
 function MagazineBag_Core.AssignMagazineBag(player, item, value)
     if not item then return false end
     local modData = item:getModData()
     modData.isMagazineBag = value
 
-    if player then
-        if syncItemModData then
-            syncItemModData(player, item)
+    SendModData(player, item, "assignBag", value)
+end
+
+function MagazineBag_Core.GetAmmoFamily(item)
+    local Ammo = GetGunworksAmmo()
+    return Ammo and item and Ammo.GetFamilyForItem(item) or nil
+end
+
+function MagazineBag_Core.GetAmmoChoices(item)
+    local family = MagazineBag_Core.GetAmmoFamily(item)
+    return family and GetGunworksAmmo().GetBulletTypesForFamily(family) or nil
+end
+
+function MagazineBag_Core.GetAssignedAmmo(item)
+    if not item or not item:hasModData() then return nil end
+    local roundType = item:getModData()[MagazineBag_Core.AMMO_KEY]
+    if not roundType then return nil end
+
+    local family = MagazineBag_Core.GetAmmoFamily(item)
+    if not family or not GetGunworksAmmo().FindBulletIndexInFamily(family, roundType) then return nil end
+
+    return roundType
+end
+
+function MagazineBag_Core.AssignMagazineAmmo(player, magazine, roundType)
+    if not magazine then return end
+    magazine:getModData()[MagazineBag_Core.AMMO_KEY] = roundType
+
+    SendModData(player, magazine, "assignAmmo", roundType)
+end
+
+function MagazineBag_Core.SendAssignedAmmoToOwner(character, item)
+    if not isServer() or not character or not item then return end
+    sendServerCommand(character, "TienMagazineBag", "syncAmmo",
+        { itemId = item:getID(), value = item:getModData()[MagazineBag_Core.AMMO_KEY] })
+end
+
+function MagazineBag_Core.GetRoundDisplayName(roundType)
+    local script = roundType and getScriptManager():FindItem(roundType)
+    return script and script:getDisplayName() or roundType
+end
+
+function MagazineBag_Core.GetReloadRoundTypes(player, item)
+    local assigned = MagazineBag_Core.GetAssignedAmmo(item)
+    if assigned then return { assigned } end
+
+    local family = MagazineBag_Core.GetAmmoFamily(item)
+    if family then
+        local gun = player and player:getPrimaryHandItem()
+        if gun and gun ~= item and MagazineBag_Core.LoadsLooseRounds(gun)
+                and MagazineBag_Core.GetAmmoFamily(gun) == family then
+            local gunAssigned = MagazineBag_Core.GetAssignedAmmo(gun)
+            if gunAssigned then return { gunAssigned } end
         end
-        if isClient() then
-            sendClientCommand(player, "TienMagazineBag", "assignBag", { itemId = item:getID(), value = value })
-        end
+        return GetGunworksAmmo().GetOrderedBulletTypesForFamily(player, family) or {}
+    end
+
+    local ammoType = item and item:getAmmoType()
+    return ammoType and { ammoType:getItemKey() } or {}
+end
+
+function MagazineBag_Core.SetMagazineRoundType(magazine, roundType)
+    local Ammo = GetGunworksAmmo()
+    if Ammo and magazine and roundType then
+        Ammo.MagazineAmmoProfileSetter(magazine, roundType)
     end
 end
 
@@ -21,11 +106,57 @@ function MagazineBag_Core.IsMagazineBag(item)
     return modData.isMagazineBag or false
 end
 
-function MagazineBag_Core.HasMagazineWeapon(player)
-    if not player then return false end
+local function GetRangedWeapon(player)
+    local weapon = player and player:getPrimaryHandItem()
+    if weapon and instanceof(weapon, "HandWeapon") and weapon:isRanged() then return weapon end
+    return nil
+end
 
-    local weapon = player:getPrimaryHandItem()
-    return weapon and weapon:isRanged() and weapon.getMagazineType and weapon:getMagazineType()
+local function GetProfileMagazineSet(weapon)
+    local Magazine = GetGunworks("Magazine")
+    local profile = Magazine and Magazine.GetProfileForGun(weapon)
+    return profile and Magazine.ProfileMagazineSet[profile] or nil
+end
+
+local function GetSpeedLoaderTypes(weapon)
+    local SpeedLoader = GetGunworks("SpeedLoader")
+    local types = SpeedLoader and SpeedLoader.GetSpeedLoaderTypesForGun(weapon)
+    return types and #types > 0 and types or nil
+end
+
+local function GetFeedKind(weapon)
+    if not weapon then return nil end
+    if GetProfileMagazineSet(weapon) then return "magazine" end
+    if GetSpeedLoaderTypes(weapon) then return "speedloader" end
+    if weapon:getMagazineType() then return "magazine" end
+    return nil
+end
+
+function MagazineBag_Core.LoadsLooseRounds(item)
+    return item ~= nil and instanceof(item, "HandWeapon") and item:isRanged() and GetFeedKind(item) ~= "magazine"
+end
+
+function MagazineBag_Core.HasMagazineWeapon(player)
+    return GetFeedKind(GetRangedWeapon(player)) == "magazine"
+end
+
+function MagazineBag_Core.HasFeedWeapon(player)
+    return GetFeedKind(GetRangedWeapon(player)) ~= nil
+end
+
+function MagazineBag_Core.HasSpeedLoaderWeapon(player)
+    return GetFeedKind(GetRangedWeapon(player)) == "speedloader"
+end
+
+local function CanLoadGun(weapon)
+    return not weapon:isJammed() and (weapon:getCurrentAmmoCount() or 0) < (weapon:getMaxAmmo() or 0)
+end
+
+function MagazineBag_Core.GetBestMagazine(player, weapon)
+    if GetProfileMagazineSet(weapon) then
+        return GetGunworks("Magazine").getBestMagazineForGun(player, weapon)
+    end
+    return weapon:getBestMagazine(player)
 end
 
 function MagazineBag_Core.HasAmmoWeapon(player)
@@ -52,11 +183,25 @@ function MagazineBag_Core.FindMagazineBags(player)
 end
 
 function MagazineBag_Core.IsMagazine(item, player)
-    if not item or not MagazineBag_Core.HasMagazineWeapon(player) then return false end
+    local weapon = GetRangedWeapon(player)
+    local kind = GetFeedKind(weapon)
+    if not item or not kind then return false end
 
-    local weapon = player:getPrimaryHandItem()
+    local fullType = item:getFullType()
+
+    if kind == "speedloader" then
+        for _, speedLoaderType in ipairs(GetSpeedLoaderTypes(weapon)) do
+            if fullType == speedLoaderType then return true end
+        end
+        return false
+    end
+
+    local profileSet = GetProfileMagazineSet(weapon)
+    if profileSet and profileSet[fullType] then return true end
+
     local weaponMagType = weapon:getMagazineType()
-    if item:getType() == weaponMagType or item:getFullType() == weaponMagType then
+    if not weaponMagType then return false end
+    if item:getType() == weaponMagType or fullType == weaponMagType then
         return true
     end
     local weaponMagTypeName = weaponMagType:find("%.") and weaponMagType:match("%.(.+)$") or weaponMagType
@@ -64,13 +209,21 @@ function MagazineBag_Core.IsMagazine(item, player)
     return item:getType() == weaponMagTypeName
 end
 
-function MagazineBag_Core.GetAmmoItemType(player)
-    if not MagazineBag_Core.HasAmmoWeapon(player) then return nil end
+function MagazineBag_Core.GetWeaponRoundTypes(player)
+    if not MagazineBag_Core.HasAmmoWeapon(player) then return {} end
 
     local weapon = player:getPrimaryHandItem()
-    local ammoType = weapon.getAmmoType and weapon:getAmmoType()
+    local family = MagazineBag_Core.GetAmmoFamily(weapon)
+    local familyTypes = family and GetGunworksAmmo().GetOrderedBulletTypesForFamily(player, family)
+    if familyTypes and #familyTypes > 0 then return familyTypes end
 
-    return ammoType and ammoType:getItemKey() or nil
+    return { weapon:getAmmoType():getItemKey() }
+end
+
+local function ToSet(list)
+    local set = {}
+    for _, value in ipairs(list) do set[value] = true end
+    return set
 end
 
 function MagazineBag_Core.IsMagazineEmpty(magazine)
@@ -92,7 +245,7 @@ function MagazineBag_Core.HasSpentAmmoInInventory(player)
 
     local inventory = player:getInventory()
     local items = inventory:getItems()
-    local ammoItemType = MagazineBag_Core.GetAmmoItemType(player)
+    local roundTypes = ToSet(MagazineBag_Core.GetWeaponRoundTypes(player))
 
     for i = 0, items:size() - 1 do
         local item = items:get(i)
@@ -100,7 +253,7 @@ function MagazineBag_Core.HasSpentAmmoInInventory(player)
             if MagazineBag_Core.IsMagazine(item, player) and MagazineBag_Core.IsMagazineEmpty(item) then
                 return true
             end
-            if item:getFullType() == ammoItemType then
+            if roundTypes[item:getFullType()] then
                 return true
             end
         end
@@ -110,7 +263,7 @@ function MagazineBag_Core.HasSpentAmmoInInventory(player)
 end
 
 function MagazineBag_Core.HasAmmoInInventory(player)
-    if not MagazineBag_Core.HasMagazineWeapon(player) then return false end
+    if not MagazineBag_Core.HasFeedWeapon(player) then return false end
 
     local inventory = player:getInventory()
     local items = inventory:getItems()
@@ -125,17 +278,20 @@ function MagazineBag_Core.HasAmmoInInventory(player)
     return false
 end
 
-function MagazineBag_Core.GetFetchableRoundType(player)
-    if MagazineBag_Core.HasMagazineWeapon(player) then return nil end
+function MagazineBag_Core.GetFetchableRoundTypes(player)
+    if MagazineBag_Core.HasMagazineWeapon(player) then return {} end
 
-    return MagazineBag_Core.GetAmmoItemType(player)
+    local assigned = MagazineBag_Core.GetAssignedAmmo(GetRangedWeapon(player))
+    if assigned then return { [assigned] = true } end
+
+    return ToSet(MagazineBag_Core.GetWeaponRoundTypes(player))
 end
 
 function MagazineBag_Core.HasFreshAmmoInBags(player)
     if not MagazineBag_Core.HasAmmoWeapon(player) then return false end
 
     local magazineBags = MagazineBag_Core.FindMagazineBags(player)
-    local roundItemType = MagazineBag_Core.GetFetchableRoundType(player)
+    local roundTypes = MagazineBag_Core.GetFetchableRoundTypes(player)
 
     for _, bag in ipairs(magazineBags) do
         local bagContainer = bag:getItemContainer()
@@ -148,7 +304,7 @@ function MagazineBag_Core.HasFreshAmmoInBags(player)
                     if MagazineBag_Core.IsMagazine(item, player) and MagazineBag_Core.IsMagazineFull(item) then
                         return true
                     end
-                    if item:getFullType() == roundItemType then
+                    if roundTypes[item:getFullType()] then
                         return true
                     end
                 end
@@ -161,7 +317,7 @@ end
 
 function MagazineBag_Core.FindReloadableMagazines(player)
     local magazines = {}
-    if not MagazineBag_Core.HasMagazineWeapon(player) then return magazines end
+    if not MagazineBag_Core.HasFeedWeapon(player) then return magazines end
 
     local items = player:getInventory():getItems()
     for i = 0, items:size() - 1 do
@@ -187,31 +343,40 @@ function MagazineBag_Core.FindReloadableMagazines(player)
     return magazines
 end
 
-function MagazineBag_Core.CountSpareBullets(player, magazine)
-    local ammoType = magazine and magazine:getAmmoType()
-    if not ammoType then return 0 end
-    return player:getInventory():getItemCountRecurse(ammoType:getItemKey())
+function MagazineBag_Core.CountSpareBullets(player, item)
+    local inventory = player:getInventory()
+    local count = 0
+    for _, roundType in ipairs(MagazineBag_Core.GetReloadRoundTypes(player, item)) do
+        count = count + inventory:getItemCountRecurse(roundType)
+    end
+    return count
 end
 
 function MagazineBag_Core.HasReloadableMagazines(player)
-    if not MagazineBag_Core.HasMagazineWeapon(player) then return false end
+    if not MagazineBag_Core.HasFeedWeapon(player) then return false end
 
     local weapon = player:getPrimaryHandItem()
+    local isMagazineWeapon = MagazineBag_Core.HasMagazineWeapon(player)
 
-    if not weapon:isContainsClip() then
-        return weapon:getBestMagazine(player) ~= nil
+    if isMagazineWeapon and not weapon:isContainsClip() then
+        return MagazineBag_Core.GetBestMagazine(player, weapon) ~= nil
     end
 
-    local magazines = MagazineBag_Core.FindReloadableMagazines(player)
-    if #magazines > 0 and MagazineBag_Core.CountSpareBullets(player, magazines[1].magazine) > 0 then
-        return true
+    for _, entry in ipairs(MagazineBag_Core.FindReloadableMagazines(player)) do
+        if MagazineBag_Core.CountSpareBullets(player, entry.magazine) > 0 then
+            return true
+        end
     end
 
-    if (weapon:getCurrentAmmoCount() or 0) < (weapon:getMaxAmmo() or 0) then
-        if weapon:getBestMagazine(player) then return true end
+    if isMagazineWeapon and (weapon:getCurrentAmmoCount() or 0) < (weapon:getMaxAmmo() or 0) then
+        if MagazineBag_Core.GetBestMagazine(player, weapon) then return true end
+        if MagazineBag_Core.CountSpareBullets(player, weapon) > 0 then return true end
+    end
 
-        local ammoItemType = MagazineBag_Core.GetAmmoItemType(player)
-        if ammoItemType and player:getInventory():getItemCountRecurse(ammoItemType) > 0 then
+    if not isMagazineWeapon and CanLoadGun(weapon) then
+        if MagazineBag_Core.CountSpareBullets(player, weapon) > 0 then return true end
+        if (weapon:getCurrentAmmoCount() or 0) == 0
+                and GetGunworks("SpeedLoader").GetBestSpeedLoaderForGun(player, weapon) then
             return true
         end
     end
@@ -247,6 +412,13 @@ function MagazineBag_Core.ReloadMagazines(player, pass)
         return
     end
 
+    local revolver = MagazineBag_Core.HasSpeedLoaderWeapon(player) and player:getPrimaryHandItem() or nil
+    if revolver and pass < 2 and CanLoadGun(revolver) then
+        ISReloadWeaponAction.BeginAutomaticReload(player, revolver)
+        ISTimedActionQueue.add(MagazineBag_ContinueReload:new(player, pass + 1))
+        return
+    end
+
     local magazines = MagazineBag_Core.FindReloadableMagazines(player)
     local playerInventory = player:getInventory()
     local magazineBags = MagazineBag_Core.FindMagazineBags(player)
@@ -257,50 +429,71 @@ function MagazineBag_Core.ReloadMagazines(player, pass)
     local insertMagazine = nil
     local insertAlreadyInHand = false
     if weapon and not weapon:isContainsClip() then
-        insertMagazine = weapon:getBestMagazine(player)
+        insertMagazine = MagazineBag_Core.GetBestMagazine(player, weapon)
     end
 
     if #magazines > 0 then
-        local bulletBudget = MagazineBag_Core.CountSpareBullets(player, magazines[1].magazine)
-        local itemKey = magazines[1].magazine:getAmmoType():getItemKey()
-
-        local totalNeeded = 0
+        local neededByType = {}
         for _, entry in ipairs(magazines) do
             local magazine = entry.magazine
-            totalNeeded = totalNeeded + math.max(0, (magazine:getMaxAmmo() or 0) - (magazine:getCurrentAmmoCount() or 0))
+            entry.needed = math.max(0, (magazine:getMaxAmmo() or 0) - (magazine:getCurrentAmmoCount() or 0))
+            entry.roundTypes = MagazineBag_Core.GetReloadRoundTypes(player, magazine)
+            for _, roundType in ipairs(entry.roundTypes) do
+                neededByType[roundType] = (neededByType[roundType] or 0) + entry.needed
+            end
         end
 
-        if bulletBudget > 0 then
-            local bullets = playerInventory:getSomeTypeRecurse(itemKey, math.min(bulletBudget, totalNeeded))
-            local taken = 0
+        local pools = {}
+        for roundType, needed in pairs(neededByType) do
+            if needed > 0 then
+                pools[roundType] = { bullets = playerInventory:getSomeTypeRecurse(roundType, needed), taken = 0 }
+            end
+        end
 
-            for _, entry in ipairs(magazines) do
-                if taken >= bullets:size() then break end
-                local magazine = entry.magazine
-                local needed = (magazine:getMaxAmmo() or 0) - (magazine:getCurrentAmmoCount() or 0)
-                if needed > 0 then
-                    local toLoad = math.min(needed, bullets:size() - taken)
+        for _, entry in ipairs(magazines) do
+            local magazine = entry.magazine
+            local needed = entry.needed
+            local loads = {}
 
+            for _, roundType in ipairs(entry.roundTypes) do
+                if needed <= 0 then break end
+                local pool = pools[roundType]
+                local toLoad = pool and math.min(needed, pool.bullets:size() - pool.taken) or 0
+
+                if toLoad > 0 then
                     for _ = 1, toLoad do
-                        local bullet = bullets:get(taken)
-                        taken = taken + 1
+                        local bullet = pool.bullets:get(pool.taken)
+                        pool.taken = pool.taken + 1
                         if luautils.haveToBeTransfered(player, bullet) then
                             ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, bullet, bullet:getContainer(), playerInventory))
                         end
                     end
+                    needed = needed - toLoad
+                    table.insert(loads, { roundType = roundType, count = toLoad })
+                end
+            end
 
-                    if entry.bagContainer then
-                        ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, magazine, entry.bagContainer, playerInventory))
-                    end
-                    ISTimedActionQueue.add(ISLoadBulletsInMagazine:new(player, magazine, toLoad))
+            if #loads > 0 then
+                if entry.bagContainer then
+                    ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, magazine, entry.bagContainer, playerInventory))
+                end
 
-                    if magazine == insertMagazine then
-                        insertAlreadyInHand = true
-                    elseif entry.bagContainer then
-                        ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, magazine, playerInventory, entry.bagContainer))
-                    else
-                        StoreInBag(player, magazine, playerInventory, magazineBags, reserved)
+                local ammoType = magazine:getAmmoType()
+                local loadedType = ammoType and ammoType:getItemKey()
+                for _, load in ipairs(loads) do
+                    if load.roundType ~= loadedType then
+                        ISTimedActionQueue.add(MagazineBag_SetAmmoType:new(player, magazine, load.roundType))
+                        loadedType = load.roundType
                     end
+                    ISTimedActionQueue.add(ISLoadBulletsInMagazine:new(player, magazine, load.count))
+                end
+
+                if magazine == insertMagazine then
+                    insertAlreadyInHand = true
+                elseif entry.bagContainer then
+                    ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, magazine, playerInventory, entry.bagContainer))
+                else
+                    StoreInBag(player, magazine, playerInventory, magazineBags, reserved)
                 end
             end
         end
@@ -349,13 +542,12 @@ function MagazineBag_Core.StoreAmmoToBag(player, includeFull)
         end
     end
 
-    local ammoItemType = MagazineBag_Core.GetAmmoItemType(player)
-    if not ammoItemType then return end
-
-    for i = items:size() - 1, 0, -1 do
-        local item = items:get(i)
-        if item and item:getFullType() == ammoItemType then
-            StoreInBag(player, item, inventory, magazineBags, reserved)
+    for _, roundType in ipairs(MagazineBag_Core.GetWeaponRoundTypes(player)) do
+        for i = items:size() - 1, 0, -1 do
+            local item = items:get(i)
+            if item and item:getFullType() == roundType then
+                StoreInBag(player, item, inventory, magazineBags, reserved)
+            end
         end
     end
 end
@@ -365,7 +557,7 @@ function MagazineBag_Core.FetchFreshAmmoFromBag(player)
 
     local magazineBags = MagazineBag_Core.FindMagazineBags(player)
     local playerInventory = player:getInventory()
-    local roundItemType = MagazineBag_Core.GetFetchableRoundType(player)
+    local roundTypes = MagazineBag_Core.GetFetchableRoundTypes(player)
 
     if #magazineBags == 0 then return end
 
@@ -374,26 +566,31 @@ function MagazineBag_Core.FetchFreshAmmoFromBag(player)
     local fetched = 0
     local added = 0
 
-    for _, bag in ipairs(magazineBags) do
-        local bagContainer = bag:getItemContainer()
-        if bagContainer then
-            local reduction = (bagContainer:getWeightReduction() or 0) / 100
-            local bagItems = bagContainer:getItems()
+    for _, looseRounds in ipairs({ false, true }) do
+        for _, bag in ipairs(magazineBags) do
+            local bagContainer = bag:getItemContainer()
+            if bagContainer then
+                local reduction = (bagContainer:getWeightReduction() or 0) / 100
+                local bagItems = bagContainer:getItems()
 
-            for i = bagItems:size() - 1, 0, -1 do
-                local item = bagItems:get(i)
-                local wanted = item and
-                    ((MagazineBag_Core.IsMagazine(item, player) and MagazineBag_Core.IsMagazineFull(item))
-                        or item:getFullType() == roundItemType)
+                for i = bagItems:size() - 1, 0, -1 do
+                    local item = bagItems:get(i)
+                    local wanted
+                    if looseRounds then
+                        wanted = item and roundTypes[item:getFullType()]
+                    else
+                        wanted = item and MagazineBag_Core.IsMagazine(item, player) and MagazineBag_Core.IsMagazineFull(item)
+                    end
 
-                if wanted then
-                    local weight = item:getActualWeight()
-                    local cost = weight * reduction
-                    if (unlimited or added + cost <= budget)
-                            and playerInventory:hasRoomFor(player, fetched + weight) then
-                        fetched = fetched + weight
-                        added = added + cost
-                        ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, item, bagContainer, playerInventory))
+                    if wanted then
+                        local weight = item:getActualWeight()
+                        local cost = weight * reduction
+                        if (unlimited or added + cost <= budget)
+                                and playerInventory:hasRoomFor(player, fetched + weight) then
+                            fetched = fetched + weight
+                            added = added + cost
+                            ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, item, bagContainer, playerInventory))
+                        end
                     end
                 end
             end

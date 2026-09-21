@@ -49,7 +49,8 @@ local function magazineBagRadialMenu()
 
         if MagazineBag_Options.IsEnabled(MagazineBag_Options.RELOAD)
                 and MagazineBag_Core.HasReloadableMagazines(player) then
-            menu:addSlice("Reload Magazines", reloadIcon, function()
+            local label = MagazineBag_Core.HasSpeedLoaderWeapon(player) and "Reload Speedloaders" or "Reload Magazines"
+            menu:addSlice(label, reloadIcon, function()
                 MagazineBag_Core.ReloadMagazines(player)
             end)
         end
