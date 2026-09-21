@@ -1,6 +1,6 @@
 version=1
 id=3491332744
-title=Tien's Ammo Bags
+title=Tien's Ammo Bags - WITH GUNWORKS FRAMEWORK SUPPORT
 description=Assign any bag, pouch or holster you are already wearing as an ammo bag, then move your ammunition in and out from the firearm radial menu.
 description=
 description=To assign one, right click a worn item that can hold things and pick "Assign Ammo Bag". There are no new items to find or craft. Assign as many as you like.
@@ -29,4 +29,5 @@ description=Every kind of round - hollow point, armor piercing, subsonic and the
 description=Speedloaders and stripper clips - stored, refilled and fetched like magazines. Hold a revolver that takes them and Reload Magazines becomes Reload Speedloaders, which loads the revolver, then refills every speedloader you are carrying.
 description=
 description=To choose which round a magazine, speedloader, revolver, shotgun or lever-action is filled with, right click it and pick "Assign Ammo". Its tooltip shows your choice, and a magazine keeps it while it is in your gun. Anything assigned only ever takes its own round, whether you reload from the radial menu or with your Reload key. If you run out of that round it waits, rather than taking something else. Speedloaders without a round of their own follow the revolver in your hand. Pick "Unassign Ammo" to go back to filling it with whatever rounds you have.tags=Build 41;Build 42;Balance;Military;Multiplayer;QoL
+tags=
 visibility=public
