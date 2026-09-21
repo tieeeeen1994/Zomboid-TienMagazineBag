@@ -30,9 +30,6 @@ end
 
 local function SendModData(player, item, command, value)
     if not player then return end
-    if syncItemModData then
-        syncItemModData(player, item)
-    end
     if isClient() then
         sendClientCommand(player, "TienMagazineBag", command, { itemId = item:getID(), value = value })
     end
