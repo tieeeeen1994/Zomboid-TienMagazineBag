@@ -1,5 +1,6 @@
 require 'MagazineBag_Core'
 require 'MagazineBag_Options'
+require 'MagazineBag_Boxes'
 require "ISUI/ISFirearmRadialMenu"
 
 local storeIcon = getTexture("media/ui/RadialMenu_MagazineBagStore.png")
@@ -47,11 +48,19 @@ local function magazineBagRadialMenu()
             end)
         end
 
+        local reloadLabel = MagazineBag_Core.HasSpeedLoaderWeapon(player) and "Reload Speedloaders" or "Reload Magazines"
+
         if MagazineBag_Options.IsEnabled(MagazineBag_Options.RELOAD)
                 and MagazineBag_Core.HasReloadableMagazines(player) then
-            local label = MagazineBag_Core.HasSpeedLoaderWeapon(player) and "Reload Speedloaders" or "Reload Magazines"
-            menu:addSlice(label, reloadIcon, function()
+            menu:addSlice(reloadLabel, reloadIcon, function()
                 MagazineBag_Core.ReloadMagazines(player)
+            end)
+        end
+
+        if MagazineBag_Options.IsEnabled(MagazineBag_Options.RELOAD_BOXES)
+                and MagazineBag_Boxes.HasBoxesFor(player, MagazineBag_Core.GetReloadDemands(player)) then
+            menu:addSlice(reloadLabel .. " (Open Boxes)", reloadIcon, function()
+                MagazineBag_Core.ReloadMagazines(player, 1, true)
             end)
         end
 
@@ -59,6 +68,13 @@ local function magazineBagRadialMenu()
                 and MagazineBag_Core.HasFreshAmmoInBags(player) then
             menu:addSlice("Fetch Fresh Ammo", fetchIcon, function()
                 MagazineBag_Core.FetchFreshAmmoFromBag(player)
+            end)
+        end
+
+        if MagazineBag_Options.IsEnabled(MagazineBag_Options.FETCH_BOXES)
+                and MagazineBag_Boxes.HasBoxesFor(player, MagazineBag_Core.GetFetchDemands(player)) then
+            menu:addSlice("Fetch Fresh Ammo (Open Boxes)", fetchIcon, function()
+                MagazineBag_Core.FetchFreshAmmoFromBag(player, true)
             end)
         end
 
