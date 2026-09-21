@@ -9,15 +9,34 @@ The Lua source has no comments on purpose. The reasoning behind non-obvious code
 ### Bag assignment (multiplayer)
 - `AssignMagazineBag` sets `modData.isMagazineBag`, calls `syncItemModData`, and sends the `assignBag` client command. In B42 MP the inventory is server-authoritative, so the server's copy of the item has to get the flag too or the assignment is lost on logout. `MagazineBag_Server.lua` handles that command.
 
+### Gunworks support
+Everything Gunworks-specific keys off the framework (`SWMG`), not a particular gun pack, so any pack built on it is covered (Guns of Marz, VWP2GoM, ...). `GetGunworks(name)` only requires `WeaponSystems/Utils/<name>` when `SWMG` is active, and resolves it lazily so file load order doesn't matter. Without it, every path falls back to vanilla and behaves as it always did. Ammo Maker only handles crafting and casings, so it plays no part here.
+
+### Assigned ammo
+Gunworks puts each magazine in an ammo family (e.g. `"5.56x45mm"`) that lists several round types: ball, HP, AP, subsonic. A magazine loads one type at a time, whatever `getAmmoType()` currently says.
+- The assignment is `modData.MagazineBag_AmmoType`, synced like `isMagazineBag`. `GetAssignedAmmo` ignores a value that isn't in the item's family, so a stale one (Gunworks removed, family changed) is harmless.
+- `GetReloadRoundTypes`: an assigned magazine takes only its assigned round and waits if there is none. That is the point of assigning it. An unassigned one takes whatever is on hand, in the player's Gunworks reload order (`GunworksAmmoPref`), and can mix types to fill up. Gunworks' `AmmoList` hooks track each round, so mixing is safe.
+- Guns that load loose rounds (`LoadsLooseRounds`: revolvers, shotguns, lever-actions, anything whose feed kind isn't "magazine") can be assigned a round themselves. On a magazine-fed gun the same modData key only holds the inserted magazine's assignment while it's in there (see `MagazineBag_AmmoCarry.lua`), so assigning those guns directly isn't offered.
+- `GetReloadRoundTypes`: an unassigned speedloader or magazine takes the assignment of the loose-round gun in hand when they share a family. So a revolver assigned to subsonic gets its speedloaders filled with subsonic, which it will then accept.
+- `GetFetchableRoundTypes` narrows to the gun's own assignment. Storing still bags the whole family.
+- Inserting a magazine destroys the item, and ejecting creates a new one with `instanceItem()`, so modData would be lost. `MagazineBag_AmmoCarry.lua` moves the assignment onto the gun in `ISInsertMagazine:loadAmmo` and back onto the new magazine in `ISEjectMagazine:unloadAmmo`. Those run in SP or on the MP server, so the owning client is told through the `syncAmmo` server command. The ejected magazine is found by diffing item IDs, not by type: Gunworks swaps the gun's magazine type around inside the same call. Both hooks skip loose-round guns, because inserting a speedloader into a revolver also goes through `loadAmmo`, and copying would overwrite the revolver's own assignment.
+- Hot Brass Tactical Reload (`HBTacReload`) ejects without `ISEjectMagazine`: it creates the magazine itself and drops it through `SpentCasingPhysics.doSpawnCasing(..., optionalItem, ...)`. That function is wrapped to move the assignment onto `optionalItem`. The wrap is installed on `OnInitGlobalModData`, because `doSpawnCasing` is defined in Hot Brass's server folder. It works because that item object itself is what `AddWorldInventoryItem` later puts on the ground, so its modData lands with it.
+- `hasModData()` guards `GetAssignedAmmo`, because the tooltip calls it for every hovered item and `getModData()` would create a table on each one.
+
 ### Weapon kinds
-- `HasMagazineWeapon`: magazine-fed guns (pistols, the bolt-action rifles that take a magazine). Only these have magazines to store, fetch or reload.
-- `HasAmmoWeapon`: any firearm. Revolvers, shotguns, lever-actions and the hunting rifle load loose rounds straight into the gun. They have no magazines, but their rounds are still worth bagging.
-- `IsMagazine` matches the weapon's magazine type against both the short and the full item type, the same way vanilla B42 does (see `predicateNotFullMagazine`).
+`GetFeedKind` classifies the gun in hand in the same order Gunworks' `BeginAutomaticReload` does: a Gunworks magazine profile, then Gunworks speedloaders, then the vanilla `getMagazineType()`.
+- `HasMagazineWeapon`: magazine-fed guns (pistols, rifles and anything with a Gunworks magazine profile). Only these have a magazine to eject or insert.
+- `HasFeedWeapon`: magazine-fed guns plus Gunworks speedloader guns (revolvers, the Mosin's stripper clip). Speedloaders are stored, refilled and fetched like magazines, but never ejected. See ReloadMagazines for how the revolver itself is loaded.
+- `HasSpeedLoaderWeapon`: the speedloader case on its own. The radial entry is labelled "Reload Speedloaders" for these, under the same `reloadMagazines` option key.
+- `HasAmmoWeapon`: any firearm. Revolvers, shotguns, lever-actions and the hunting rifle load loose rounds straight into the gun. Their rounds are still worth bagging.
+- `IsMagazine`: a Gunworks gun can take several magazines (an M4 takes STANAG 20 to 150), but `getMagazineType()` names only the one last inserted. So it checks the profile's set first, or the speedloader list, and then falls back to matching the magazine type against both the short and the full item type, as vanilla B42 does (see `predicateNotFullMagazine`).
+- `GetBestMagazine` uses Gunworks' `getBestMagazineForGun` for profile guns. `HandWeapon:getBestMagazine` only knows the one magazine type.
+- `GetWeaponRoundTypes`: the gun's whole Gunworks ammo family in the player's reload order, or else its single ammo type. Store and fetch use it, so loose HP or AP rounds are bagged along with ball.
 
 ### Menu visibility
-- `HasAmmoInInventory` needs a magazine weapon. Only magazines separate "Store All Ammo" from "Store Spent Ammo", so without one that entry would just repeat the other.
-- `GetFetchableRoundType` returns nil for magazine weapons. Loose rounds are only worth fetching for a gun that loads them directly. A magazine-fed gun wants magazines, and Reload Magazines already draws rounds out of the bags without carrying them first.
-- `HasReloadableMagazines` is true for an empty gun with a magazine to hand. It is also true when the magazine in the gun is part-used and there is a spare to swap in, or loose rounds to top it up after ejecting.
+- `HasAmmoInInventory` needs a magazine or speedloader weapon. Only those separate "Store All Ammo" from "Store Spent Ammo", so without one that entry would just repeat the other. Speedloaders follow the magazine rule: Store Spent takes empty and part-used ones, and Store All takes full ones too.
+- `GetFetchableRoundTypes` is empty for magazine weapons. Loose rounds are only worth fetching for a gun that loads them directly (speedloader guns included). A magazine-fed gun wants magazines, and Reload Magazines already draws rounds out of the bags without carrying them first.
+- `HasReloadableMagazines` is true for an empty magazine gun with a magazine to hand. It is also true when the magazine in the gun is part-used and there is a spare to swap in, or loose rounds to top it up after ejecting. For any feed weapon, it is true when a non-full magazine or speedloader has rounds to hand.
 - `FindReloadableMagazines` returns non-full magazines in priority order: main inventory first, then each worn bag.
 
 ### StoreInBag
@@ -28,8 +47,11 @@ Queues a move into the first bag that will take the item.
 ### ReloadMagazines
 - **Ejecting first.** A part-used magazine in the gun should be topped up too. But `ISEjectMagazine` only creates the item once its animation has run, so it cannot be queued for refilling in the same pass. Instead the reload queues the eject plus `MagazineBag_ContinueReload`, which plans again on pass 2, when the ejected magazine is an ordinary spare.
 - **Loading the gun last.** The gun is loaded at the end, after the spares, so whichever magazine goes in is already full by then.
+- **Speedloader guns load first.** Pass 1 hands the revolver to `ISReloadWeaponAction.BeginAutomaticReload`, the R-key reload that Gunworks hooks. An empty cylinder takes the best speedloader, and a part-loaded one takes loose rounds in the player's ammo order. Then `MagazineBag_ContinueReload` refills the speedloaders on pass 2. The order is reversed from magazines because Gunworks' insert hook only empties a speedloader into the cylinder and leaves the item behind. Refilling afterwards tops up the one just used, and planning it on pass 2 sees its real, emptied count.
+- `HasReloadableMagazines` for a speedloader gun is also true when the revolver can take rounds: loose rounds on hand, or an empty cylinder with a loaded speedloader.
 - **One magazine at a time.** A bag discounts the weight of what it holds, so a whole reload's worth of rounds in hand can push the character over their carry weight. Loading uses up the rounds and each magazine goes straight back into a bag, so only one magazine's worth is carried at any time.
-- **One call to getSomeTypeRecurse.** It is called once and its result is handed out in slices. Calling it per magazine would return the same rounds each time, since nothing has moved yet while the queue is built.
+- **One call to getSomeTypeRecurse per round type.** Each type is fetched once, for the combined need of every magazine that accepts it, and the result is handed out in slices. Calling it per magazine would return the same rounds each time, since nothing has moved yet while the queue is built.
+- **Switching round type.** Before each load whose type differs from the magazine's current one, `MagazineBag_SetAmmoType` calls Gunworks' `MagazineAmmoProfileSetter`. It runs in the queue, not at planning time, so a cancelled reload never leaves a magazine switched to a round it didn't get. It runs after the magazine has moved to the main inventory, because Gunworks' server handler only looks there.
 - `ISLoadBulletsInMagazine` only draws from the main inventory, so rounds are moved there first. The move uses `MagazineBag_TransferAction` rather than `transferIfNeeded`, which uses the vanilla action: a refusal there would reset the queue and abandon the reload.
 - Bag magazines are taken out to load and put back afterwards. A filled magazine is put away before the next one starts, so its weight doesn't follow the character through the rest of the sequence. The one headed for the gun stays in hand.
 - `ISInsertMagazine` needs the magazine in the main inventory, not in a bag.
@@ -38,13 +60,14 @@ Queues a move into the first bag that will take the item.
 The first worn bag that will take the item right now, skipping the one that just turned it away. It's used when a queued move reaches a bag that has filled up since the move was planned.
 
 ### StoreAmmoToBag
-Loose rounds are queued in one run after the magazines. The transfer action only bulk-merges back-to-back moves of the same item type into the same container.
+Loose rounds are queued after the magazines, one run per round type. The transfer action only bulk-merges back-to-back moves of the same item type into the same container.
 
 ### FetchFreshAmmoFromBag
 Fetches only what the character can carry without becoming encumbered.
 - `hasRoomFor` on the main inventory checks the hard capacity. That is well above where Heavy Load sets in, which is the inventory's `getMaxWeight()` (the same limit `ISHotbar` checks). So the budget is `getMaxWeight() - getCapacityWeight()`, which is skipped when the character has unlimited carry.
 - An item in a worn bag already counts toward the character's weight, discounted by the bag's weight reduction. Taking it out only adds back the part the bag was hiding: `weight * getWeightReduction() / 100`. A running total covers the moves the queue hasn't run yet.
 - `hasRoomFor` stays in as the hard cap, with its own running total.
+- Two passes over the bags: full magazines and speedloaders first, then loose rounds. Both share one weight budget, so without the ordering, loose rounds a revolver owner also wants could use up the budget and leave the speedloaders in the bag.
 
 ## MagazineBag_TransferAction.lua
 A plain vanilla transfer with one change: where the item ends up.
@@ -54,6 +77,20 @@ A plain vanilla transfer with one change: where the item ends up.
 
 ## MagazineBag_ContinueReload.lua
 `ISEjectMagazine` creates the ejected magazine with `instanceItem()` when its animation finishes. That means the item doesn't exist while the reload is being planned. This action sits after the eject and runs the planning again, when the magazine is an ordinary spare.
+
+## MagazineBag_SetAmmoType.lua
+It sets the type before `ISBaseTimedAction.perform`, because that call can start the next action right away. The next action is the load, and `ISLoadBulletsInMagazine:start` checks the magazine's ammo type.
+
+## MagazineBag_GunworksHooks.lua
+Makes Gunworks' own reloads (the R key, its radial and "reload all magazines" paths) follow assignments. Gunworks calls these through the module table on every use, so replacing the table field is enough.
+- `Ammo.GetAutomaticReloadAmmoType` returns the item's assignment. It returns it even when none of that round is carried: Gunworks then loads nothing, where a nil would let it fall back to the gun's current type. Magazine-fed guns are skipped, because their key belongs to the inserted magazine, and Gunworks never asks for their round type anyway.
+- `SpeedLoader.GetBestSpeedLoaderForGun`: for an assigned gun, only a speedloader holding nothing but the assigned round (checked through its `AmmoList`, or its ammo type when there is none). If there isn't one, Gunworks falls through to loading loose assigned rounds.
+
+## MagazineBag_AmmoMenu.lua
+"Assign Ammo ▸" and "Unassign Ammo" apply to every selected magazine, speedloader or loose-round gun of the first one's family. Only carried items are offered, because the server applies the assignment by searching the player's inventory. The round counts shown are what the player carries, bags included.
+
+## MagazineBag_Tooltip.lua
+Guns of Marz replaces `ISToolTipInv:render` wholesale when its file loads. So the wrap is installed on `OnGameStart`, on top of whichever render is there, and adds its row below what that render drew. The row is measured first so its background can be drawn before the text, since `layout:render` can widen the tooltip.
 
 ## MagazineBag_Options.lua
 - Option keys are deliberately not derived from the entry labels. Renaming an entry must not silently reset what players have already turned off.
