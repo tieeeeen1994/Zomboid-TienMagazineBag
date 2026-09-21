@@ -48,7 +48,14 @@ end
 
 function MagazineBag_Core.GetAmmoFamily(item)
     local Ammo = GetGunworksAmmo()
-    return Ammo and item and Ammo.GetFamilyForItem(item) or nil
+    if not Ammo or not item then return nil end
+
+    local family = Ammo.GetFamilyForItem(item)
+    if family then return family end
+
+    local ammoType = item.getAmmoType and item:getAmmoType()
+    local _, roundFamily = Ammo.FindBulletEntry(ammoType and ammoType:getItemKey())
+    return roundFamily
 end
 
 function MagazineBag_Core.GetAmmoChoices(item)
@@ -445,6 +452,87 @@ function MagazineBag_Core.GetReloadDemands(player)
     return demands
 end
 
+function MagazineBag_Core.HoldsOnly(item, roundType)
+    local ammoList = item:hasModData() and item:getModData().AmmoList
+    if ammoList and #ammoList > 0 then
+        for _, loaded in ipairs(ammoList) do
+            if loaded ~= roundType then return false end
+        end
+        return true
+    end
+
+    local ammoType = item:getAmmoType()
+    return ammoType ~= nil and ammoType:getItemKey() == roundType
+end
+
+local function GetLastRound(weapon)
+    local ammoList = weapon:hasModData() and weapon:getModData().AmmoList
+    if weapon:isRoundChambered() and ammoList and #ammoList > 0 then
+        return ammoList[#ammoList]
+    end
+    local ammoType = weapon:getAmmoType()
+    return ammoType and ammoType:getItemKey()
+end
+
+local function EndsHoldingOnly(entry, roundType)
+    if (entry.magazine:getCurrentAmmoCount() or 0) > 0 and not MagazineBag_Core.HoldsOnly(entry.magazine, roundType) then
+        return false
+    end
+    for _, load in ipairs(entry.loads) do
+        if load.roundType ~= roundType then return false end
+    end
+    return true
+end
+
+local function ChooseInsertMagazine(player, weapon, reloadable)
+    local candidates = {}
+    local planned = {}
+    for _, entry in ipairs(reloadable) do
+        planned[entry.magazine] = true
+        table.insert(candidates, entry)
+    end
+
+    local function addFull(item)
+        if item and not planned[item] and MagazineBag_Core.IsMagazine(item, player) then
+            table.insert(candidates, { magazine = item, loads = {} })
+        end
+    end
+
+    local items = player:getInventory():getItems()
+    for i = 0, items:size() - 1 do addFull(items:get(i)) end
+    for _, bag in ipairs(MagazineBag_Core.FindMagazineBags(player)) do
+        local bagContainer = bag:getItemContainer()
+        if bagContainer then
+            local bagItems = bagContainer:getItems()
+            for i = 0, bagItems:size() - 1 do addFull(bagItems:get(i)) end
+        end
+    end
+
+    local lastRound = GetLastRound(weapon)
+    local best, bestKey = nil, nil
+
+    for _, entry in ipairs(candidates) do
+        local rounds = entry.magazine:getCurrentAmmoCount() or 0
+        for _, load in ipairs(entry.loads) do rounds = rounds + load.count end
+
+        if rounds > 0 then
+            local capacity = entry.magazine:getMaxAmmo() or 0
+            local matches = lastRound and EndsHoldingOnly(entry, lastRound)
+            local key = matches and { 1, rounds, capacity } or { 0, capacity, rounds }
+
+            local better = not bestKey
+            if not better then
+                for k = 1, 3 do
+                    if key[k] ~= bestKey[k] then better = key[k] > bestKey[k]; break end
+                end
+            end
+            if better then best, bestKey = entry.magazine, key end
+        end
+    end
+
+    return best
+end
+
 function MagazineBag_Core.ReloadMagazines(player, pass, openBoxes)
     if not player then return end
     pass = pass or 1
@@ -479,75 +567,80 @@ function MagazineBag_Core.ReloadMagazines(player, pass, openBoxes)
     local reserved = {}
     for index = 1, #magazineBags do reserved[index] = 0 end
 
+    local neededByType = {}
+    for _, entry in ipairs(magazines) do
+        local magazine = entry.magazine
+        entry.needed = math.max(0, (magazine:getMaxAmmo() or 0) - (magazine:getCurrentAmmoCount() or 0))
+        entry.roundTypes = MagazineBag_Core.GetReloadRoundTypes(player, magazine)
+        for _, roundType in ipairs(entry.roundTypes) do
+            neededByType[roundType] = (neededByType[roundType] or 0) + entry.needed
+        end
+    end
+
+    local pools = {}
+    for roundType, needed in pairs(neededByType) do
+        if needed > 0 then
+            pools[roundType] = { bullets = playerInventory:getSomeTypeRecurse(roundType, needed), taken = 0 }
+        end
+    end
+
+    for _, entry in ipairs(magazines) do
+        local needed = entry.needed
+        entry.loads = {}
+        entry.bullets = {}
+
+        for _, roundType in ipairs(entry.roundTypes) do
+            if needed <= 0 then break end
+            local pool = pools[roundType]
+            local toLoad = pool and math.min(needed, pool.bullets:size() - pool.taken) or 0
+
+            if toLoad > 0 then
+                for _ = 1, toLoad do
+                    table.insert(entry.bullets, pool.bullets:get(pool.taken))
+                    pool.taken = pool.taken + 1
+                end
+                needed = needed - toLoad
+                table.insert(entry.loads, { roundType = roundType, count = toLoad })
+            end
+        end
+    end
+
     local insertMagazine = nil
     local insertAlreadyInHand = false
     if weapon and not weapon:isContainsClip() then
-        insertMagazine = MagazineBag_Core.GetBestMagazine(player, weapon)
+        insertMagazine = ChooseInsertMagazine(player, weapon, magazines)
     end
 
-    if #magazines > 0 then
-        local neededByType = {}
-        for _, entry in ipairs(magazines) do
-            local magazine = entry.magazine
-            entry.needed = math.max(0, (magazine:getMaxAmmo() or 0) - (magazine:getCurrentAmmoCount() or 0))
-            entry.roundTypes = MagazineBag_Core.GetReloadRoundTypes(player, magazine)
-            for _, roundType in ipairs(entry.roundTypes) do
-                neededByType[roundType] = (neededByType[roundType] or 0) + entry.needed
-            end
-        end
+    for _, entry in ipairs(magazines) do
+        local magazine = entry.magazine
 
-        local pools = {}
-        for roundType, needed in pairs(neededByType) do
-            if needed > 0 then
-                pools[roundType] = { bullets = playerInventory:getSomeTypeRecurse(roundType, needed), taken = 0 }
-            end
-        end
-
-        for _, entry in ipairs(magazines) do
-            local magazine = entry.magazine
-            local needed = entry.needed
-            local loads = {}
-
-            for _, roundType in ipairs(entry.roundTypes) do
-                if needed <= 0 then break end
-                local pool = pools[roundType]
-                local toLoad = pool and math.min(needed, pool.bullets:size() - pool.taken) or 0
-
-                if toLoad > 0 then
-                    for _ = 1, toLoad do
-                        local bullet = pool.bullets:get(pool.taken)
-                        pool.taken = pool.taken + 1
-                        if luautils.haveToBeTransfered(player, bullet) then
-                            ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, bullet, bullet:getContainer(), playerInventory))
-                        end
-                    end
-                    needed = needed - toLoad
-                    table.insert(loads, { roundType = roundType, count = toLoad })
+        if #entry.loads > 0 then
+            for _, bullet in ipairs(entry.bullets) do
+                if luautils.haveToBeTransfered(player, bullet) then
+                    ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, bullet, bullet:getContainer(), playerInventory))
                 end
             end
 
-            if #loads > 0 then
-                if entry.bagContainer then
-                    ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, magazine, entry.bagContainer, playerInventory))
-                end
+            if entry.bagContainer then
+                ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, magazine, entry.bagContainer, playerInventory))
+            end
 
-                local ammoType = magazine:getAmmoType()
-                local loadedType = ammoType and ammoType:getItemKey()
-                for _, load in ipairs(loads) do
-                    if load.roundType ~= loadedType then
-                        ISTimedActionQueue.add(MagazineBag_SetAmmoType:new(player, magazine, load.roundType))
-                        loadedType = load.roundType
-                    end
-                    ISTimedActionQueue.add(ISLoadBulletsInMagazine:new(player, magazine, load.count))
+            local ammoType = magazine:getAmmoType()
+            local loadedType = ammoType and ammoType:getItemKey()
+            for _, load in ipairs(entry.loads) do
+                if load.roundType ~= loadedType then
+                    ISTimedActionQueue.add(MagazineBag_SetAmmoType:new(player, magazine, load.roundType))
+                    loadedType = load.roundType
                 end
+                ISTimedActionQueue.add(ISLoadBulletsInMagazine:new(player, magazine, load.count))
+            end
 
-                if magazine == insertMagazine then
-                    insertAlreadyInHand = true
-                elseif entry.bagContainer then
-                    ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, magazine, playerInventory, entry.bagContainer))
-                else
-                    StoreInBag(player, magazine, playerInventory, magazineBags, reserved)
-                end
+            if magazine == insertMagazine then
+                insertAlreadyInHand = true
+            elseif entry.bagContainer then
+                ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, magazine, playerInventory, entry.bagContainer))
+            else
+                StoreInBag(player, magazine, playerInventory, magazineBags, reserved)
             end
         end
     end
