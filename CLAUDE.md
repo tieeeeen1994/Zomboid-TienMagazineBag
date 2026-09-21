@@ -9,16 +9,8 @@ The Lua source has no comments on purpose. The reasoning behind non-obvious code
 ### Bag assignment (multiplayer)
 - `AssignMagazineBag` sets `modData.isMagazineBag` locally and sends the `assignBag` client command. In B42 MP the inventory is server-authoritative, so the server's copy of the item has to get the flag too or the assignment is lost on logout. `MagazineBag_Server.lua` handles that command, then calls `syncItemModData` to push the server's copy back to the owner. That is the direction vanilla uses it in (from `complete()`, e.g. `ISChangeFishingRodEquip`). The client doesn't call it: it does nothing useful there, and could pull back the server's copy from before the change.
 
-### Feature toggles
-The Gunworks features each have their own tick box under "Gunworks Gang" in `MagazineBag_Options.lua`, on by default: `gunworksSupport`, `ammoAssignment`, `speedloaderReload`. `IsFeatureEnabled(id)` is the one gate. Core spells the IDs as string literals, because `MagazineBag_Options` is client-only and would be nil on the server; keep them in sync with the option keys. The Open Boxes entries are ordinary radial entries, checked in the radial menu like the others.
-- On the server it always returns true. Options are per player and client-side. The server hooks only act on what a client set up (an assignment already on an item, a feed kind needed to carry it), so leaving them on is harmless when a player has the feature off.
-- `gunworksSupport` gates `GetGunworks`, which every Gunworks lookup in Core goes through. So turning it off turns off extra magazine types, speedloaders and ammo families all at once. Assignment needs a family, so it's off too.
-- `ammoAssignment` gates `GetAssignedAmmo`, so existing assignments are ignored everywhere (reload, tooltip, the Gunworks hooks), not just hidden in the menu. Turning it back on restores them, since the modData is untouched.
-- `speedloaderReload` gates only the revolver-loading step and its part of `HasReloadableMagazines` / `GetReloadDemands`. Speedloader refilling stays under `gunworksSupport`.
-- The Gunworks hook installs use `RequireGunworks`, not `GetGunworks`. They run at file load, before options are readable, and the wrapped functions check the gates themselves on every call.
-
 ### Gunworks support
-Everything Gunworks-specific keys off the framework (`SWMG`), not a particular gun pack, so any pack built on it is covered (Guns of Marz, VWP2GoM, ...). `RequireGunworks(name)` only requires `WeaponSystems/Utils/<name>` when `SWMG` is active, and resolves it lazily so file load order doesn't matter. Without it, or with `gunworksSupport` off, every path falls back to vanilla and behaves as it always did. Ammo Maker only handles crafting and casings, so it plays no part here.
+Everything Gunworks-specific keys off the framework (`SWMG`), not a particular gun pack, so any pack built on it is covered (Guns of Marz, VWP2GoM, ...). It has no setting: it's always on when `SWMG` is active. `GetGunworks(name)` only requires `WeaponSystems/Utils/<name>` when `SWMG` is active, and resolves it lazily so file load order doesn't matter. Without it, every path falls back to vanilla and behaves as it always did. Ammo Maker only handles crafting and casings, so it plays no part here.
 
 ### Assigned ammo
 Gunworks puts each magazine in an ammo family (e.g. `"5.56x45mm"`) that lists several round types: ball, HP, AP, subsonic. A magazine loads one type at a time, whatever `getAmmoType()` currently says.
@@ -84,11 +76,18 @@ Fetches only what the character can carry without becoming encumbered.
 "(Open Boxes)" versions of Reload and Fetch, each with its own option that is off by default.
 - `GetReloadDemands` lists what the reload will need: each reloadable magazine or speedloader, plus the gun itself when it's a part-used magazine gun (its magazine becomes a spare after the eject) or a speedloader revolver. Each entry uses the same `GetReloadRoundTypes` the reload uses, so assignments decide which boxes are worth opening.
 - `GetFetchDemands`: only for guns that load loose rounds. It asks for one full load (`getMaxAmmo()`). A magazine gun fetches magazines, and Reload already pulls rounds out of the bags.
-- Opened rounds don't exist until the craft action finishes. So Reload opens the boxes, then queues `MagazineBag_ContinueReload` on the same pass to plan the real reload. It's the same trick the eject uses.
+- **One box at a time.** Opening every needed box up front would put all their rounds in hand at once. That breaks the one-magazine's-worth rule and can leave the character encumbered. So Reload (Open Boxes) runs in rounds, each ending in one `MagazineBag_ContinueReload`:
+  1. Each round refills magazines from the loose rounds on hand, and each one goes back to its bag.
+  2. It collects what's still short (`shortfall`) and opens **one** box for it (`MagazineBag_Boxes.OpenOne`).
+  3. It plans again once that box's rounds exist. Opened rounds don't exist until the craft finishes, the same reason the eject needs a second pass.
+  4. The gun is only loaded on the last round, when no box is left to open. Until then every refilled magazine goes back to its bag.
+- **Loose rounds count as used.** A magazine still short after the refill plan has used up every loose round on its list. So the shortfall is planned with `looseUsed` (loose rounds count as 0), not counted again.
+- **`openedBoxes`** is nil for a normal reload, and a table of box IDs already tried in box mode. It's carried through `ContinueReload`, including across the eject pass. A box that fails to open (its recipe refused) is skipped from then on, so the loop always ends.
+- **Speedloader revolvers:** pass 1 opens one box first, but only if the revolver has nothing to load from (`RevolverHasRounds`: no loose rounds, and for an empty cylinder no loaded speedloader).
 
 ## MagazineBag_Boxes.lua
 - **Finding boxes.** Built once from the game's craft recipes, so vanilla, Gunworks packs and any other mod's boxes are found without a list. A candidate is a recipe with one item input (amount 1) and one item output (amount > 1). The box has to name that recipe as its `DoubleClickRecipe`. That rule leaves out conversion recipes such as Guns of Marz's `Convert_MarzGuns_to_SWMG`, which also turn one item into rounds. Mapped outputs are resolved with `OutputMapper:getPatternForResult(round)`, which returns the box `Item` scripts for that round. Unmapped ones use the input's possible items.
-- **`Plan`.** Loose rounds are used first, and a box is opened only for what they can't cover. A box's rounds count as available for later demands, so one box can serve several magazines. With a `budget` (Fetch), each box is charged the weight its bag was hiding, as in `FetchFreshAmmoFromBag`.
+- **`Plan`.** Loose rounds are used first, and a box is opened only for what they can't cover. A box's rounds count as available for later demands, so one box can serve several magazines. Options: `budget` (Fetch) charges each box the weight its bag was hiding, as in `FetchFreshAmmoFromBag`. `looseUsed` counts loose rounds as 0. `skip` is a set of box IDs to leave alone.
 - **Opening.** Goes through vanilla `ISInventoryPaneContextMenu.OnNewCraft`, the same path as opening a box from its right-click menu. It checks the recipe and moves the box into the main inventory, where the rounds come out. That move uses the vanilla transfer action. A refusal would reset the queue, but moving a worn bag's item into the main inventory is practically never refused.
 - The radial entries only show when `Plan` would open at least one box. Otherwise they'd be copies of the normal entries.
 

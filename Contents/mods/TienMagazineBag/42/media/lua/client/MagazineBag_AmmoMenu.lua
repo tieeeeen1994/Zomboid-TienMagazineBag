@@ -31,7 +31,6 @@ local function assignAll(playerObj, magazines, roundType)
 end
 
 local function ammoAssignmentContextMenu(player, context, items)
-    if not MagazineBag_Core.IsFeatureEnabled("ammoAssignment") then return end
     local magazines = findAssignableMagazines(items)
     if #magazines == 0 then return end
 

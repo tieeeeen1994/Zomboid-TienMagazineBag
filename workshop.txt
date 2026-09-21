@@ -28,8 +28,5 @@ description=Every magazine your gun takes - a rifle that takes 20, 30 and 60 rou
 description=Every kind of round - hollow point, armor piercing, subsonic and the rest your gun accepts are stored and fetched together, whatever is loaded right now.
 description=Speedloaders and stripper clips - stored, refilled and fetched like magazines. Hold a revolver that takes them and Reload Magazines becomes Reload Speedloaders, which loads the revolver, then refills every speedloader you are carrying.
 description=
-description=To choose which round a magazine, speedloader, revolver, shotgun or lever-action is filled with, right click it and pick "Assign Ammo". Its tooltip shows your choice, and a magazine keeps it while it is in your gun. Anything assigned only ever takes its own round, whether you reload from the radial menu or with your Reload key. If you run out of that round it waits, rather than taking something else. Speedloaders without a round of their own follow the revolver in your hand. Pick "Unassign Ammo" to go back to filling it with whatever rounds you have.
-description=
-description=Each of these can be turned off under Gunworks Gang in Settings.
-tags=Build 41;Build 42;Balance;Military;Multiplayer;QoL
+description=To choose which round a magazine, speedloader, revolver, shotgun or lever-action is filled with, right click it and pick "Assign Ammo". Its tooltip shows your choice, and a magazine keeps it while it is in your gun. Anything assigned only ever takes its own round, whether you reload from the radial menu or with your Reload key. If you run out of that round it waits, rather than taking something else. Speedloaders without a round of their own follow the revolver in your hand. Pick "Unassign Ammo" to go back to filling it with whatever rounds you have.tags=Build 41;Build 42;Balance;Military;Multiplayer;QoL
 visibility=public

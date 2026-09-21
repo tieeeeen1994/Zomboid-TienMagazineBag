@@ -9,12 +9,13 @@ end
 function MagazineBag_ContinueReload:perform()
     ISBaseTimedAction.perform(self)
 
-    MagazineBag_Core.ReloadMagazines(self.character, self.pass)
+    MagazineBag_Core.ReloadMagazines(self.character, self.pass, self.openedBoxes)
 end
 
-function MagazineBag_ContinueReload:new(character, pass)
+function MagazineBag_ContinueReload:new(character, pass, openedBoxes)
     local o = ISBaseTimedAction.new(self, character)
     o.pass = pass
+    o.openedBoxes = openedBoxes
     o.maxTime = 1
     o.useProgressBar = false
     o.stopOnAim = false

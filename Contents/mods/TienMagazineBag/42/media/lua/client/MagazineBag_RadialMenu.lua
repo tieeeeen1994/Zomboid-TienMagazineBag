@@ -60,7 +60,7 @@ local function magazineBagRadialMenu()
         if MagazineBag_Options.IsEnabled(MagazineBag_Options.RELOAD_BOXES)
                 and MagazineBag_Boxes.HasBoxesFor(player, MagazineBag_Core.GetReloadDemands(player)) then
             menu:addSlice(reloadLabel .. " (Open Boxes)", reloadIcon, function()
-                MagazineBag_Core.ReloadMagazines(player, 1, true)
+                MagazineBag_Core.ReloadMagazines(player, 1, {})
             end)
         end
 

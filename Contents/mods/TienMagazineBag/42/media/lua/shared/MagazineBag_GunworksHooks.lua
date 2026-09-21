@@ -5,7 +5,7 @@ local function GetGunAssignment(item)
     return MagazineBag_Core.GetAssignedAmmo(item)
 end
 
-local Ammo = MagazineBag_Core.RequireGunworks("Ammo")
+local Ammo = MagazineBag_Core.GetGunworks("Ammo")
 if Ammo then
     local original = Ammo.GetAutomaticReloadAmmoType
     Ammo.GetAutomaticReloadAmmoType = function(playerObj, item)
@@ -13,7 +13,7 @@ if Ammo then
     end
 end
 
-local SpeedLoader = MagazineBag_Core.RequireGunworks("SpeedLoader")
+local SpeedLoader = MagazineBag_Core.GetGunworks("SpeedLoader")
 if SpeedLoader then
     local original = SpeedLoader.GetBestSpeedLoaderForGun
     SpeedLoader.GetBestSpeedLoaderForGun = function(playerObj, gun)
