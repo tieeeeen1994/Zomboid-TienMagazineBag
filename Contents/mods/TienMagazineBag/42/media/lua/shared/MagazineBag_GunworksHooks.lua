@@ -1,18 +1,5 @@
 require 'MagazineBag_Core'
 
-local function HoldsOnly(item, roundType)
-    local ammoList = item:hasModData() and item:getModData().AmmoList
-    if ammoList and #ammoList > 0 then
-        for _, loaded in ipairs(ammoList) do
-            if loaded ~= roundType then return false end
-        end
-        return true
-    end
-
-    local ammoType = item:getAmmoType()
-    return ammoType ~= nil and ammoType:getItemKey() == roundType
-end
-
 local function GetGunAssignment(item)
     if instanceof(item, "HandWeapon") and not MagazineBag_Core.LoadsLooseRounds(item) then return nil end
     return MagazineBag_Core.GetAssignedAmmo(item)
@@ -40,7 +27,7 @@ if SpeedLoader then
             local items = inventory:getAllTypeRecurse(speedLoaderType)
             for i = 0, items:size() - 1 do
                 local speedLoader = items:get(i)
-                if speedLoader:getCurrentAmmoCount() > 0 and HoldsOnly(speedLoader, assigned) then
+                if speedLoader:getCurrentAmmoCount() > 0 and MagazineBag_Core.HoldsOnly(speedLoader, assigned) then
                     return speedLoader
                 end
             end
