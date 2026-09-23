@@ -7,6 +7,8 @@ local storeIcon = getTexture("media/ui/RadialMenu_MagazineBagStore.png")
 local fetchIcon = getTexture("media/ui/RadialMenu_MagazineBagFetch.png")
 local stowAllIcon = getTexture("media/ui/RadialMenu_MagazineBagStowAll.png")
 local reloadIcon = getTexture("media/ui/RadialMenu_ReloadMagazines.png")
+local reloadBoxesIcon = getTexture("media/ui/RadialMenu_ReloadMagazinesBoxes.png")
+local fetchBoxesIcon = getTexture("media/ui/RadialMenu_MagazineBagFetchBoxes.png")
 
 local function magazineBagRadialMenu()
     if not ISFirearmRadialMenu or not ISFirearmRadialMenu.fillMenu then
@@ -59,7 +61,7 @@ local function magazineBagRadialMenu()
 
         if MagazineBag_Options.IsEnabled(MagazineBag_Options.RELOAD_BOXES)
                 and MagazineBag_Boxes.HasBoxesFor(player, MagazineBag_Core.GetReloadDemands(player)) then
-            menu:addSlice(reloadLabel .. " (Open Boxes)", reloadIcon, function()
+            menu:addSlice(reloadLabel .. " (Open Boxes)", reloadBoxesIcon, function()
                 MagazineBag_Core.ReloadMagazines(player, 1, {})
             end)
         end
@@ -73,7 +75,7 @@ local function magazineBagRadialMenu()
 
         if MagazineBag_Options.IsEnabled(MagazineBag_Options.FETCH_BOXES)
                 and MagazineBag_Boxes.HasBoxesFor(player, MagazineBag_Core.GetFetchDemands(player)) then
-            menu:addSlice("Fetch Fresh Ammo (Open Boxes)", fetchIcon, function()
+            menu:addSlice("Fetch Fresh Ammo (Open Boxes)", fetchBoxesIcon, function()
                 MagazineBag_Core.FetchFreshAmmoFromBag(player, true)
             end)
         end
