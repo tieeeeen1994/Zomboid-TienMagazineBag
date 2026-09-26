@@ -639,7 +639,7 @@ function MagazineBag_Core.ReloadMagazines(player, pass, openedBoxes)
                     ISTimedActionQueue.add(MagazineBag_SetAmmoType:new(player, magazine, load.roundType))
                     loadedType = load.roundType
                 end
-                ISTimedActionQueue.add(ISLoadBulletsInMagazine:new(player, magazine, load.count))
+                ISTimedActionQueue.add(ISLoadBulletsInMagazine:new(player, magazine, load.count, load.count, load.roundType))
             end
 
             if magazine == insertMagazine then
