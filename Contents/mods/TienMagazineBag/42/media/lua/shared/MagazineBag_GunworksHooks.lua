@@ -1,4 +1,5 @@
 require 'MagazineBag_Core'
+require 'TimedActions/ISLoadBulletsInMagazine'
 
 local function GetGunAssignment(item)
     if instanceof(item, "HandWeapon") and not MagazineBag_Core.LoadsLooseRounds(item) then return nil end
@@ -34,5 +35,15 @@ if SpeedLoader then
         end
 
         return nil
+    end
+end
+
+if getActivatedMods():contains("SWMG") then
+    local original = ISLoadBulletsInMagazine.serverStart
+    function ISLoadBulletsInMagazine:serverStart(...)
+        if self.ammoCountStart == nil and self.magazine then
+            self.ammoCountStart = self.magazine:getCurrentAmmoCount()
+        end
+        return original(self, ...)
     end
 end
