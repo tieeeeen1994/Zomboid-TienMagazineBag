@@ -520,6 +520,78 @@ local function ChooseInsertMagazine(player, weapon, reloadable)
     return best
 end
 
+local function GunRounds(weapon)
+    return (weapon:getCurrentAmmoCount() or 0) + (weapon:isRoundChambered() and 1 or 0)
+end
+
+local function CountMagazineRounds(player, container)
+    local total = 0
+    local items = container:getItems()
+    for i = 0, items:size() - 1 do
+        local item = items:get(i)
+        if MagazineBag_Core.IsMagazine(item, player) then
+            total = total + (item:getCurrentAmmoCount() or 0)
+        elseif instanceof(item, "InventoryContainer") then
+            total = total + CountMagazineRounds(player, item:getInventory())
+        end
+    end
+    return total
+end
+
+local function CountCarriedRounds(player, weapon, extraType)
+    local inventory = player:getInventory()
+    local roundTypes = ToSet(MagazineBag_Core.GetWeaponRoundTypes(player))
+    if extraType then roundTypes[extraType] = true end
+
+    local total = GunRounds(weapon) + CountMagazineRounds(player, inventory)
+    for roundType in pairs(roundTypes) do
+        total = total + inventory:getItemCountRecurse(roundType)
+    end
+    return total
+end
+
+local function QueueSize(player)
+    return #ISTimedActionQueue.getTimedActionQueue(player).queue
+end
+
+local function SyncedAfterEject(player, weapon)
+    local total = CountCarriedRounds(player, weapon)
+    return function()
+        return not weapon:isContainsClip() and CountCarriedRounds(player, weapon) == total
+    end
+end
+
+local function SyncedAfterGunLoad(player, weapon)
+    local gunRounds = GunRounds(weapon)
+    local total = CountCarriedRounds(player, weapon)
+    return function()
+        return GunRounds(weapon) ~= gunRounds and CountCarriedRounds(player, weapon) == total
+    end
+end
+
+local function SyncedAfterBox(player, weapon, entry)
+    local boxId = entry.box:getID()
+    local total = CountCarriedRounds(player, weapon, entry.roundType) + entry.count
+    return function()
+        return player:getInventory():getItemWithIDRecursiv(boxId) == nil
+            and CountCarriedRounds(player, weapon, entry.roundType) >= total
+    end
+end
+
+local function OpenBox(player, demands, openedBoxes)
+    local queued = QueueSize(player)
+    local entry = MagazineBag_Boxes.OpenOne(player, demands, openedBoxes)
+    if not entry then return false end
+
+    openedBoxes[entry.box:getID()] = true
+
+    local weapon = GetRangedWeapon(player)
+    if isClient() and weapon and QueueSize(player) > queued then
+        return true, SyncedAfterBox(player, weapon, entry)
+    end
+    return true
+end
+
 function MagazineBag_Core.ReloadMagazines(player, pass, openedBoxes)
     if not player then return end
     pass = pass or 1
@@ -529,8 +601,9 @@ function MagazineBag_Core.ReloadMagazines(player, pass, openedBoxes)
 
     if weapon and pass < 2 and weapon:isContainsClip()
             and (weapon:getCurrentAmmoCount() or 0) < (weapon:getMaxAmmo() or 0) then
+        local synced = isClient() and SyncedAfterEject(player, weapon) or nil
         ISTimedActionQueue.add(ISEjectMagazine:new(player, weapon))
-        ISTimedActionQueue.add(MagazineBag_ContinueReload:new(player, pass + 1, openedBoxes))
+        ISTimedActionQueue.add(MagazineBag_ContinueReload:new(player, pass + 1, openedBoxes, synced))
         return
     end
 
@@ -541,16 +614,18 @@ function MagazineBag_Core.ReloadMagazines(player, pass, openedBoxes)
                 needed = (revolver:getMaxAmmo() or 0) - (revolver:getCurrentAmmoCount() or 0),
                 roundTypes = MagazineBag_Core.GetReloadRoundTypes(player, revolver),
             }
-            local boxId = MagazineBag_Boxes.OpenOne(player, { demand }, openedBoxes)
-            if boxId then
-                openedBoxes[boxId] = true
-                ISTimedActionQueue.add(MagazineBag_ContinueReload:new(player, pass, openedBoxes))
+            local opened, synced = OpenBox(player, { demand }, openedBoxes)
+            if opened then
+                ISTimedActionQueue.add(MagazineBag_ContinueReload:new(player, pass, openedBoxes, synced))
                 return
             end
         end
 
+        local queued = QueueSize(player)
+        local synced = isClient() and SyncedAfterGunLoad(player, revolver) or nil
         ISReloadWeaponAction.BeginAutomaticReload(player, revolver)
-        ISTimedActionQueue.add(MagazineBag_ContinueReload:new(player, pass + 1, openedBoxes))
+        if QueueSize(player) == queued then synced = nil end
+        ISTimedActionQueue.add(MagazineBag_ContinueReload:new(player, pass + 1, openedBoxes, synced))
         return
     end
 
@@ -635,11 +710,17 @@ function MagazineBag_Core.ReloadMagazines(player, pass, openedBoxes)
             local ammoType = magazine:getAmmoType()
             local loadedType = ammoType and ammoType:getItemKey()
             for _, load in ipairs(entry.loads) do
+                local await = MagazineBag_AwaitRounds:new(player, load.roundType)
+                ISTimedActionQueue.add(await)
                 if load.roundType ~= loadedType then
-                    ISTimedActionQueue.add(MagazineBag_SetAmmoType:new(player, magazine, load.roundType))
+                    local setType = MagazineBag_SetAmmoType:new(player, magazine, load.roundType)
+                    ISTimedActionQueue.add(setType)
+                    table.insert(await.dependents, setType)
                     loadedType = load.roundType
                 end
-                ISTimedActionQueue.add(ISLoadBulletsInMagazine:new(player, magazine, load.count, load.count, load.roundType))
+                local loadAction = ISLoadBulletsInMagazine:new(player, magazine, load.count, load.count, load.roundType)
+                ISTimedActionQueue.add(loadAction)
+                table.insert(await.dependents, loadAction)
             end
 
             if magazine == insertMagazine then
@@ -661,10 +742,9 @@ function MagazineBag_Core.ReloadMagazines(player, pass, openedBoxes)
     end
 
     if moreBoxes then
-        local boxId = MagazineBag_Boxes.OpenOne(player, shortfall, openedBoxes)
-        if boxId then
-            openedBoxes[boxId] = true
-            ISTimedActionQueue.add(MagazineBag_ContinueReload:new(player, math.max(pass, 2), openedBoxes))
+        local opened, synced = OpenBox(player, shortfall, openedBoxes)
+        if opened then
+            ISTimedActionQueue.add(MagazineBag_ContinueReload:new(player, math.max(pass, 2), openedBoxes, synced))
         end
     end
 end

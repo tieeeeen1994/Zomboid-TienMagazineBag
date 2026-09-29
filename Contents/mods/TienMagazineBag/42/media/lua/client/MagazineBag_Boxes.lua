@@ -114,7 +114,7 @@ function MagazineBag_Boxes.Plan(player, demands, options)
                 local cost = BoxCost(player, box)
                 if budget == nil or cost <= budget then
                     if budget then budget = budget - cost end
-                    table.insert(planned, { box = box, recipe = def.recipe })
+                    table.insert(planned, { box = box, recipe = def.recipe, roundType = roundType, count = def.count })
                     available[roundType] = count(roundType) + def.count
                     needed = take(roundType, needed)
                 end
@@ -147,5 +147,5 @@ function MagazineBag_Boxes.OpenOne(player, demands, skip)
     if not entry then return nil end
 
     OpenBox(player, entry)
-    return entry.box:getID()
+    return entry
 end
