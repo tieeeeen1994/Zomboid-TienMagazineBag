@@ -2,4 +2,4 @@ name=Tien's Ammo Bags
 id=TienMagazineBag
 description=Assign any bag, pouch or holster you are wearing as an ammo bag, then store magazines and loose rounds, reload, and fetch fresh ammunition from the firearm radial menu. Guns without magazines, such as revolvers and shotguns, are supported too, and each menu entry can be turned off in Settings.
 poster=poster.png
-version=3.0.1
+version=3.0.2

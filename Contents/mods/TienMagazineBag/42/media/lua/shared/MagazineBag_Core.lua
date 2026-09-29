@@ -557,7 +557,10 @@ end
 local function SyncedAfterEject(player, weapon)
     local total = CountCarriedRounds(player, weapon)
     return function()
-        return not weapon:isContainsClip() and CountCarriedRounds(player, weapon) == total
+        local hasClip = weapon:isContainsClip()
+        local now = CountCarriedRounds(player, weapon)
+        return not hasClip and now == total,
+            string.format("eject: gun has magazine=%s, rounds carried=%d, expected=%d", tostring(hasClip), now, total)
     end
 end
 
@@ -565,16 +568,23 @@ local function SyncedAfterGunLoad(player, weapon)
     local gunRounds = GunRounds(weapon)
     local total = CountCarriedRounds(player, weapon)
     return function()
-        return GunRounds(weapon) ~= gunRounds and CountCarriedRounds(player, weapon) == total
+        local nowGun = GunRounds(weapon)
+        local now = CountCarriedRounds(player, weapon)
+        return nowGun ~= gunRounds and now == total,
+            string.format("gun load: gun rounds=%d (was %d), rounds carried=%d, expected=%d", nowGun, gunRounds, now, total)
     end
 end
 
 local function SyncedAfterBox(player, weapon, entry)
     local boxId = entry.box:getID()
+    local boxType = entry.box:getFullType()
     local total = CountCarriedRounds(player, weapon, entry.roundType) + entry.count
     return function()
-        return player:getInventory():getItemWithIDRecursiv(boxId) == nil
-            and CountCarriedRounds(player, weapon, entry.roundType) >= total
+        local boxLeft = player:getInventory():getItemWithIDRecursiv(boxId) ~= nil
+        local now = CountCarriedRounds(player, weapon, entry.roundType)
+        return not boxLeft and now >= total,
+            string.format("box %s (%d x %s): box still carried=%s, rounds carried=%d, expected at least %d",
+                boxType, entry.count, entry.roundType, tostring(boxLeft), now, total)
     end
 end
 

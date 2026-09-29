@@ -2,7 +2,7 @@ require "TimedActions/ISBaseTimedAction"
 
 MagazineBag_AwaitRounds = ISBaseTimedAction:derive("MagazineBag_AwaitRounds")
 
-local WAIT_MS = 3000
+local WAIT_MS = 1000
 
 function MagazineBag_AwaitRounds:isValid()
     return true
@@ -16,7 +16,11 @@ function MagazineBag_AwaitRounds:waitToStart()
     if not isClient() then return false end
 
     self.waitStartMs = self.waitStartMs or getTimestampMs()
-    return getTimestampMs() - self.waitStartMs < WAIT_MS and not self:hasRounds()
+    if self:hasRounds() then return false end
+    if getTimestampMs() - self.waitStartMs < WAIT_MS then return true end
+
+    print("[TienMagazineBag] No " .. tostring(self.roundType) .. " in the main inventory after " .. WAIT_MS .. " ms, skipping that load.")
+    return false
 end
 
 function MagazineBag_AwaitRounds:perform()

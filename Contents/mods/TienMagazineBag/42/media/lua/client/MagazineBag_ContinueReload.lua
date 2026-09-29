@@ -2,7 +2,7 @@ require "TimedActions/ISBaseTimedAction"
 
 MagazineBag_ContinueReload = ISBaseTimedAction:derive("MagazineBag_ContinueReload")
 
-local SYNC_WAIT_MS = 3000
+local SYNC_WAIT_MS = 1000
 
 function MagazineBag_ContinueReload:isValid()
     return true
@@ -12,7 +12,12 @@ function MagazineBag_ContinueReload:waitToStart()
     if not self.synced then return false end
 
     self.waitStartMs = self.waitStartMs or getTimestampMs()
-    return getTimestampMs() - self.waitStartMs < SYNC_WAIT_MS and not self.synced()
+    local synced, detail = self.synced()
+    if synced then return false end
+    if getTimestampMs() - self.waitStartMs < SYNC_WAIT_MS then return true end
+
+    print("[TienMagazineBag] Reload went on after " .. SYNC_WAIT_MS .. " ms without the server's result. " .. tostring(detail))
+    return false
 end
 
 function MagazineBag_ContinueReload:perform()
