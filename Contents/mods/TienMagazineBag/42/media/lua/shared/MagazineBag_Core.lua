@@ -17,6 +17,13 @@ local function GetGunworksAmmo()
     return GetGunworks("Ammo")
 end
 
+function MagazineBag_Core.HasRunningReload(player)
+    local mastery = TienSkillMastery
+    if not player or type(mastery) ~= "table" or type(mastery.sig) ~= "function" then return false end
+    local ok, result = pcall(mastery.sig, player, "Firearms.SigRunReload")
+    return ok and result == true
+end
+
 local function SendModData(player, item, command, value)
     if not player then return end
     if isClient() then
@@ -578,31 +585,34 @@ end
 local function SyncedAfterBox(player, weapon, entry)
     local boxId = entry.box:getID()
     local boxType = entry.box:getFullType()
-    local total = CountCarriedRounds(player, weapon, entry.roundType) + entry.count
+    local total = CountCarriedRounds(player, weapon, entry.roundType) + entry.outputCount
     return function()
         local boxLeft = player:getInventory():getItemWithIDRecursiv(boxId) ~= nil
         local now = CountCarriedRounds(player, weapon, entry.roundType)
         return not boxLeft and now >= total,
             string.format("box %s (%d x %s): box still carried=%s, rounds carried=%d, expected at least %d",
-                boxType, entry.count, entry.roundType, tostring(boxLeft), now, total)
+                boxType, entry.outputCount, entry.roundType, tostring(boxLeft), now, total)
     end
 end
 
-local function OpenBox(player, demands, openedBoxes)
+local function OpenBox(player, demands, boxRun)
     local queued = QueueSize(player)
-    local entry = MagazineBag_Boxes.OpenOne(player, demands, openedBoxes)
+    local entry = MagazineBag_Boxes.OpenOne(player, demands, boxRun)
     if not entry then return false end
+    if not isClient() or QueueSize(player) == queued then return true end
 
-    openedBoxes[entry.box:getID()] = true
+    if MagazineBag_Boxes.IsContainerOfBoxes(entry) then
+        return true, MagazineBag_Boxes.SyncedAfterOpen(player, { entry })
+    end
 
     local weapon = GetRangedWeapon(player)
-    if isClient() and weapon and QueueSize(player) > queued then
+    if weapon then
         return true, SyncedAfterBox(player, weapon, entry)
     end
     return true
 end
 
-function MagazineBag_Core.ReloadMagazines(player, pass, openedBoxes)
+function MagazineBag_Core.ReloadMagazines(player, pass, boxRun)
     if not player then return end
     pass = pass or 1
 
@@ -613,20 +623,20 @@ function MagazineBag_Core.ReloadMagazines(player, pass, openedBoxes)
             and (weapon:getCurrentAmmoCount() or 0) < (weapon:getMaxAmmo() or 0) then
         local synced = isClient() and SyncedAfterEject(player, weapon) or nil
         ISTimedActionQueue.add(ISEjectMagazine:new(player, weapon))
-        ISTimedActionQueue.add(MagazineBag_ContinueReload:new(player, pass + 1, openedBoxes, synced))
+        ISTimedActionQueue.add(MagazineBag_ContinueReload:new(player, pass + 1, boxRun, synced))
         return
     end
 
     local revolver = MagazineBag_Core.HasSpeedLoaderWeapon(player) and player:getPrimaryHandItem() or nil
     if revolver and pass < 2 and CanLoadGun(revolver) then
-        if openedBoxes and not RevolverHasRounds(player, revolver) then
+        if boxRun and not RevolverHasRounds(player, revolver) then
             local demand = {
                 needed = (revolver:getMaxAmmo() or 0) - (revolver:getCurrentAmmoCount() or 0),
                 roundTypes = MagazineBag_Core.GetReloadRoundTypes(player, revolver),
             }
-            local opened, synced = OpenBox(player, { demand }, openedBoxes)
+            local opened, synced = OpenBox(player, { demand }, boxRun)
             if opened then
-                ISTimedActionQueue.add(MagazineBag_ContinueReload:new(player, pass, openedBoxes, synced))
+                ISTimedActionQueue.add(MagazineBag_ContinueReload:new(player, pass, boxRun, synced))
                 return
             end
         end
@@ -635,7 +645,7 @@ function MagazineBag_Core.ReloadMagazines(player, pass, openedBoxes)
         local synced = isClient() and SyncedAfterGunLoad(player, revolver) or nil
         ISReloadWeaponAction.BeginAutomaticReload(player, revolver)
         if QueueSize(player) == queued then synced = nil end
-        ISTimedActionQueue.add(MagazineBag_ContinueReload:new(player, pass + 1, openedBoxes, synced))
+        ISTimedActionQueue.add(MagazineBag_ContinueReload:new(player, pass + 1, boxRun, synced))
         return
     end
 
@@ -685,7 +695,7 @@ function MagazineBag_Core.ReloadMagazines(player, pass, openedBoxes)
     end
 
     local shortfall = {}
-    if openedBoxes then
+    if boxRun then
         for _, entry in ipairs(magazines) do
             local short = entry.needed
             for _, load in ipairs(entry.loads) do short = short - load.count end
@@ -695,7 +705,7 @@ function MagazineBag_Core.ReloadMagazines(player, pass, openedBoxes)
         end
     end
     local moreBoxes = #shortfall > 0
-        and MagazineBag_Boxes.Plan(player, shortfall, { looseUsed = true, skip = openedBoxes })[1] ~= nil
+        and MagazineBag_Boxes.Plan(player, shortfall, { looseUsed = true, skip = boxRun.tried })[1] ~= nil
 
     local insertMagazine = nil
     local insertAlreadyInHand = false
@@ -752,10 +762,15 @@ function MagazineBag_Core.ReloadMagazines(player, pass, openedBoxes)
     end
 
     if moreBoxes then
-        local opened, synced = OpenBox(player, shortfall, openedBoxes)
+        local opened, synced = OpenBox(player, shortfall, boxRun)
         if opened then
-            ISTimedActionQueue.add(MagazineBag_ContinueReload:new(player, math.max(pass, 2), openedBoxes, synced))
+            ISTimedActionQueue.add(MagazineBag_ContinueReload:new(player, math.max(pass, 2), boxRun, synced))
+            return
         end
+    end
+
+    if boxRun then
+        MagazineBag_Boxes.ReturnLeftovers(player, boxRun)
     end
 end
 
@@ -849,7 +864,28 @@ function MagazineBag_Core.FetchFreshAmmoFromBag(player, openBoxes)
     end
 
     if openBoxes then
-        MagazineBag_Boxes.Open(player, MagazineBag_Core.GetFetchDemands(player), not unlimited and (budget - added) or nil)
+        MagazineBag_Core.FetchFromBoxes(player, MagazineBag_Boxes.NewRun(), not unlimited and (budget - added) or nil)
+    end
+end
+
+function MagazineBag_Core.FetchBudget(player)
+    if player:isUnlimitedCarry() then return nil end
+    local inventory = player:getInventory()
+    return inventory:getMaxWeight() - inventory:getCapacityWeight()
+end
+
+function MagazineBag_Core.FetchFromBoxes(player, boxRun, budget)
+    local queued = QueueSize(player)
+    local opened = MagazineBag_Boxes.Open(player, MagazineBag_Core.GetFetchDemands(player), budget, boxRun)
+
+    if #opened > 0 then
+        local synced = nil
+        if isClient() and QueueSize(player) > queued then
+            synced = MagazineBag_Boxes.SyncedAfterOpen(player, opened)
+        end
+        ISTimedActionQueue.add(MagazineBag_ContinueFetch:new(player, boxRun, synced))
+    else
+        MagazineBag_Boxes.ReturnLeftovers(player, boxRun)
     end
 end
 

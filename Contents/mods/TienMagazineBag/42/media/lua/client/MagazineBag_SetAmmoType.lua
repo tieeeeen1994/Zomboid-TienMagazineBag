@@ -21,6 +21,6 @@ function MagazineBag_SetAmmoType:new(character, magazine, roundType)
     o.useProgressBar = false
     o.stopOnAim = false
     o.stopOnWalk = false
-    o.stopOnRun = true
+    o.stopOnRun = not MagazineBag_Core.HasRunningReload(character)
     return o
 end

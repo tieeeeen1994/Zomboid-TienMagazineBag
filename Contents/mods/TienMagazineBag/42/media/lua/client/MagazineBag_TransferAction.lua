@@ -28,6 +28,13 @@ function MagazineBag_TransferAction:isValid()
     return true
 end
 
+function MagazineBag_TransferAction:create()
+    if MagazineBag_Core.HasRunningReload(self.character) then
+        self.stopOnRun = false
+    end
+    ISInventoryTransferAction.create(self)
+end
+
 function MagazineBag_TransferAction:start()
     self:resolveDestination()
 
