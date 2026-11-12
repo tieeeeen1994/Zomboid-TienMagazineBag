@@ -713,6 +713,9 @@ function MagazineBag_Core.ReloadMagazines(player, pass, boxRun)
         insertMagazine = ChooseInsertMagazine(player, weapon, magazines)
     end
 
+    local movedIn = 0
+    local loaded = 0
+
     for _, entry in ipairs(magazines) do
         local magazine = entry.magazine
 
@@ -720,6 +723,7 @@ function MagazineBag_Core.ReloadMagazines(player, pass, boxRun)
             for _, bullet in ipairs(entry.bullets) do
                 if luautils.haveToBeTransfered(player, bullet) then
                     ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, bullet, bullet:getContainer(), playerInventory))
+                    movedIn = movedIn + 1
                 end
             end
 
@@ -741,6 +745,7 @@ function MagazineBag_Core.ReloadMagazines(player, pass, boxRun)
                 local loadAction = ISLoadBulletsInMagazine:new(player, magazine, load.count, load.count, load.roundType)
                 ISTimedActionQueue.add(loadAction)
                 table.insert(await.dependents, loadAction)
+                loaded = loaded + load.count
             end
 
             if magazine == insertMagazine then
@@ -772,6 +777,8 @@ function MagazineBag_Core.ReloadMagazines(player, pass, boxRun)
     if boxRun then
         MagazineBag_Boxes.ReturnLeftovers(player, boxRun)
     end
+
+    MagazineBag_Core.QueueStoreRounds(player, movedIn, loaded)
 end
 
 function MagazineBag_Core.FindBagForItem(player, item, exclude)
@@ -816,6 +823,109 @@ function MagazineBag_Core.StoreAmmoToBag(player, includeFull)
             end
         end
     end
+end
+
+local function AddRoundTypes(player, item, set)
+    local family = MagazineBag_Core.GetAmmoFamily(item)
+    local familyTypes = family and GetGunworksAmmo().GetOrderedBulletTypesForFamily(player, family)
+    if familyTypes and #familyTypes > 0 then
+        for _, roundType in ipairs(familyTypes) do set[roundType] = true end
+        return
+    end
+
+    local ammoType = item.getAmmoType and item:getAmmoType()
+    local roundType = ammoType and ammoType:getItemKey()
+    if roundType then set[roundType] = true end
+end
+
+function MagazineBag_Core.GetRelatedRoundTypes(player)
+    local set = {}
+    local weapon = GetRangedWeapon(player)
+    if not weapon then return set end
+
+    AddRoundTypes(player, weapon, set)
+
+    local seen = {}
+    local function scan(container)
+        local items = container:getItems()
+        for i = 0, items:size() - 1 do
+            local item = items:get(i)
+            local fullType = item and item:getFullType()
+            if fullType and not seen[fullType] and MagazineBag_Core.IsMagazine(item, player) then
+                seen[fullType] = true
+                AddRoundTypes(player, item, set)
+            end
+        end
+    end
+
+    scan(player:getInventory())
+    for _, bag in ipairs(MagazineBag_Core.FindMagazineBags(player)) do
+        local bagContainer = bag:getItemContainer()
+        if bagContainer then scan(bagContainer) end
+    end
+
+    return set
+end
+
+function MagazineBag_Core.CountLooseRounds(player, roundTypes)
+    local count = 0
+    local items = player:getInventory():getItems()
+    for i = 0, items:size() - 1 do
+        local item = items:get(i)
+        if item and roundTypes[item:getFullType()] then count = count + 1 end
+    end
+    return count
+end
+
+function MagazineBag_Core.StoreLooseRounds(player, roundTypes)
+    if not player or not roundTypes then return end
+
+    local magazineBags = MagazineBag_Core.FindMagazineBags(player)
+    if #magazineBags == 0 then return end
+
+    local inventory = player:getInventory()
+    local items = inventory:getItems()
+    local byType = {}
+    local order = {}
+
+    for i = items:size() - 1, 0, -1 do
+        local item = items:get(i)
+        local fullType = item and item:getFullType()
+        if fullType and roundTypes[fullType] and not item:isFavorite() then
+            if not byType[fullType] then
+                byType[fullType] = {}
+                table.insert(order, fullType)
+            end
+            table.insert(byType[fullType], item)
+        end
+    end
+
+    local reserved = {}
+    for index = 1, #magazineBags do reserved[index] = 0 end
+
+    for _, fullType in ipairs(order) do
+        for _, item in ipairs(byType[fullType]) do
+            StoreInBag(player, item, inventory, magazineBags, reserved)
+        end
+    end
+end
+
+function MagazineBag_Core.QueueStoreRounds(player, movedIn, loaded)
+    if #MagazineBag_Core.FindMagazineBags(player) == 0 then return end
+
+    local roundTypes = MagazineBag_Core.GetRelatedRoundTypes(player)
+    local hasAny = false
+    for _ in pairs(roundTypes) do
+        hasAny = true
+        break
+    end
+    if not hasAny then return end
+
+    local expected = nil
+    if isClient() then
+        expected = MagazineBag_Core.CountLooseRounds(player, roundTypes) + movedIn - loaded
+    end
+    ISTimedActionQueue.add(MagazineBag_StoreRounds:new(player, roundTypes, expected))
 end
 
 function MagazineBag_Core.FetchFreshAmmoFromBag(player, openBoxes)
