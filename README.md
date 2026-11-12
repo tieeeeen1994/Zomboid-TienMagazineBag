@@ -21,6 +21,8 @@ In B42 you can also turn on "Open Boxes" versions of Reload Magazines and Fetch 
 
 Each entry can be turned on or off, per player, in Settings.
 
+In multiplayer, other players see you open ammo boxes properly instead of standing still with the box in your hand until you move. This can be turned off with the "Fix Box Opening Animation For Other Players" sandbox option, on the server's Tien's Ammo Bags page.
+
 With a B42 gun pack built on Gunworks Gang, you also get:
 
 - **Every magazine your gun takes** — a rifle that takes 20, 30 and 60 round magazines has all of them stored, reloaded and fetched.

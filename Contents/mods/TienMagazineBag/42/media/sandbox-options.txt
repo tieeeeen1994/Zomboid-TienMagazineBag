@@ -1,0 +1,9 @@
+VERSION = 1,
+
+option TienMagazineBag.BoxAnimationSync
+{
+    type = boolean,
+    default = true,
+    page = TienMagazineBag,
+    translation = TienMagazineBag_BoxAnimationSync,
+}

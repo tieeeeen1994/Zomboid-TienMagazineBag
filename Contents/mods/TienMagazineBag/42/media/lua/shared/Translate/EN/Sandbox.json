@@ -1,0 +1,6 @@
+{
+    "Sandbox_TienMagazineBag": "Tien's Ammo Bags",
+
+    "Sandbox_TienMagazineBag_BoxAnimationSync": "Fix Box Opening Animation For Other Players",
+    "Sandbox_TienMagazineBag_BoxAnimationSync_tooltip": "In multiplayer, other players could see someone opening an ammo box during a reload (or by hand) stand still with the box in their hand, stuck like that until they moved or cancelled. The game picked a reload or rack animation left over from the previous step instead of the box opening. With this on, opening a box clears those leftovers for everyone watching, and each player's game also clears them itself and ends a box opening that shows for longer than a few seconds. It only changes what others see, never what happens."
+}
