@@ -4,7 +4,7 @@ MagazineBag_BoxAnimSync = {}
 
 local BOX_ANIM = "OpenAmmoBox"
 local LEFTOVER_FLAGS = { "isLoading", "isLoadingShort", "isRacking", "isUnloading", "RackAiming" }
-local LEFTOVER_STRINGS = { "GunworksReloadAnim" }
+local LEFTOVER_STRINGS = { "GunworksReloadAnim", "GunworksStackedReload" }
 local CHECK_EVERY_TICKS = 3
 local STUCK_MS = 3000
 

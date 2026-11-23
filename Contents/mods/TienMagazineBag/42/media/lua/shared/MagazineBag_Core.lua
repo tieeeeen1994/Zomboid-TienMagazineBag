@@ -159,6 +159,35 @@ function MagazineBag_Core.HasSpeedLoaderWeapon(player)
     return GetFeedKind(GetRangedWeapon(player)) == "speedloader"
 end
 
+local function GetStackedSplit(weapon)
+    local Stacked = GetGunworks("StackedMagazines")
+    if not Stacked or not weapon or not weapon:isContainsClip() or not weapon:hasModData() then return nil end
+    local modData = weapon:getModData()
+    local state = modData[Stacked.STATE_KEY]
+    if type(state) ~= "table" or type(state.rounds) ~= "table" then return nil end
+    local group = Stacked.Groups[state.group]
+    local well = modData.MagazineType and Stacked.Sides[modData.MagazineType]
+    if not group or not well or well.group ~= group then return nil end
+    return state, group, Stacked
+end
+
+function MagazineBag_Core.GetGunMagazineFill(weapon)
+    local current = weapon:getCurrentAmmoCount() or 0
+    local state, group, Stacked = GetStackedSplit(weapon)
+    if not state then return current, weapon:getMaxAmmo() or 0 end
+
+    local reserve = 0
+    for side, rounds in pairs(state.rounds) do
+        if side ~= state.side then reserve = reserve + (tonumber(rounds) or 0) end
+    end
+    return current + reserve, Stacked.GetSideCapacity(group) * #group.magazines
+end
+
+local function GunMagazineHasRoom(weapon)
+    local rounds, capacity = MagazineBag_Core.GetGunMagazineFill(weapon)
+    return rounds < capacity
+end
+
 local function CanLoadGun(weapon)
     return not weapon:isJammed() and (weapon:getCurrentAmmoCount() or 0) < (weapon:getMaxAmmo() or 0)
 end
@@ -397,7 +426,7 @@ function MagazineBag_Core.HasReloadableMagazines(player)
         end
     end
 
-    if isMagazineWeapon and (weapon:getCurrentAmmoCount() or 0) < (weapon:getMaxAmmo() or 0) then
+    if isMagazineWeapon and GunMagazineHasRoom(weapon) then
         if MagazineBag_Core.GetBestMagazine(player, weapon) then return true end
         if MagazineBag_Core.CountSpareBullets(player, weapon) > 0 then return true end
     end
@@ -440,7 +469,8 @@ function MagazineBag_Core.GetReloadDemands(player)
     local weapon = GetRangedWeapon(player)
     if weapon and (MagazineBag_Core.HasSpeedLoaderWeapon(player)
             or (MagazineBag_Core.HasMagazineWeapon(player) and weapon:isContainsClip())) then
-        add(weapon, (weapon:getMaxAmmo() or 0) - (weapon:getCurrentAmmoCount() or 0))
+        local rounds, capacity = MagazineBag_Core.GetGunMagazineFill(weapon)
+        add(weapon, capacity - rounds)
     end
 
     return demands
@@ -528,7 +558,8 @@ local function ChooseInsertMagazine(player, weapon, reloadable)
 end
 
 local function GunRounds(weapon)
-    return (weapon:getCurrentAmmoCount() or 0) + (weapon:isRoundChambered() and 1 or 0)
+    local rounds = MagazineBag_Core.GetGunMagazineFill(weapon)
+    return rounds + (weapon:isRoundChambered() and 1 or 0)
 end
 
 local function CountMagazineRounds(player, container)
@@ -619,8 +650,7 @@ function MagazineBag_Core.ReloadMagazines(player, pass, boxRun)
     local isMagazineWeapon = MagazineBag_Core.HasMagazineWeapon(player)
     local weapon = isMagazineWeapon and player:getPrimaryHandItem() or nil
 
-    if weapon and pass < 2 and weapon:isContainsClip()
-            and (weapon:getCurrentAmmoCount() or 0) < (weapon:getMaxAmmo() or 0) then
+    if weapon and pass < 2 and weapon:isContainsClip() and GunMagazineHasRoom(weapon) then
         local synced = isClient() and SyncedAfterEject(player, weapon) or nil
         ISTimedActionQueue.add(ISEjectMagazine:new(player, weapon))
         ISTimedActionQueue.add(MagazineBag_ContinueReload:new(player, pass + 1, boxRun, synced))
