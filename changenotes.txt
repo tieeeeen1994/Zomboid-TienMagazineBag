@@ -1,5 +1,0 @@
-3.1.1
-
-Reload All
-- On a server, the magazine taken out of your gun at the end was sometimes left empty in your main inventory, even with plenty of boxed rounds. It is now filled and put in your ammo bag like the others.
-- If there are no rounds left to fill it, it still goes into your ammo bag instead of staying in your main inventory.
