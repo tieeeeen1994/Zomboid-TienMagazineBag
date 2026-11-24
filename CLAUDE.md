@@ -4,6 +4,9 @@ Project Zomboid mod. The live code is under `Contents/mods/TienMagazineBag/42/` 
 
 The Lua source has no comments on purpose. The reasoning behind non-obvious code lives here. Update this file when that reasoning changes.
 
+## Releasing
+Bump `version` in `42/mod.info`, keep `README.md`, `workshop.txt` (Steam caps its description at 8000 characters) and `mod.info`'s description in step, and write `changenotes.txt` at the repo root (user, 2026-11-24: every release). It is the Workshop change note for subscribers: plain text (no BBCode), overwritten each release, first line the version, then what changed since the last upload in short headed groups of `- ` lines (the format Guns of Tien and Tien's Skill Mastery use). Commit on master; the upload is done in game.
+
 ## MagazineBag_Core.lua
 
 ### Bag assignment (multiplayer)

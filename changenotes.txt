@@ -1,0 +1,20 @@
+3.1.0
+
+Reload All
+- Reload Magazines and Reload Magazines (Open Boxes) are now one entry, Reload All. It opens ammo boxes, then cartons, then crates, only for what your loose rounds can't cover.
+- Your gun stays loaded while it works. Your spare magazines are filled first; only at the end is the magazine in your gun swapped for a full one and topped up itself. Stop at any moment and you can still fight.
+- An empty gun gets a magazine first, before the spares are filled.
+- Shotguns, lever-actions and revolvers now have Reload All too: the gun is loaded first, speedloaders are refilled, then their ammo boxes are opened into loose rounds in your ammo bags, as many as the bags hold. Your Reload key takes loose rounds straight out of the bags, so you never wait on a box mid-fight.
+- When it ends, every ammo box, carton and crate for your gun left in your main inventory goes into your ammo bags too, not only the ones it opened.
+
+Store Spent Ammo and Store All Ammo
+- They now store ammo boxes, cartons and crates as well as magazines and loose rounds.
+- They cover every gun on your hotbar and on Tien's Customizable Hotbar, not just the one in your hands. Magazines on your hotbar stay put.
+- Store All Ammo only shows when you have a full magazine to store; otherwise it did the same as Store Spent Ammo.
+
+Keys
+- Every entry has its own key in the game's key bindings, under Tien's Ammo Bags. None are bound until you set one.
+
+Removed
+- Fetch Fresh Ammo (Open Boxes). Reload All now opens boxes into your bags, and your Reload key takes rounds and magazines out of the bags by itself.
+- The Reload and Open Boxes settings. Reload All has its own on/off tick box, on for everyone after this update.
