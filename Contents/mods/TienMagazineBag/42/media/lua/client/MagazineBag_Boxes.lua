@@ -59,6 +59,24 @@ local function GetOpeners(itemType)
     return openersByItem[itemType] or {}
 end
 
+function MagazineBag_Boxes.GetSourceTypes(itemTypes)
+    local found = {}
+    local level = itemTypes
+    for _ = 1, MAX_DEPTH do
+        local nextLevel = {}
+        for itemType in pairs(level) do
+            for _, def in ipairs(GetOpeners(itemType)) do
+                if not found[def.boxType] then
+                    found[def.boxType] = true
+                    nextLevel[def.boxType] = true
+                end
+            end
+        end
+        level = nextLevel
+    end
+    return found
+end
+
 local function FindSource(inventory, itemType, used, depth)
     local openers = GetOpeners(itemType)
 
@@ -67,7 +85,7 @@ local function FindSource(inventory, itemType, used, depth)
         for i = 0, items:size() - 1 do
             local box = items:get(i)
             if not used[box:getID()] then
-                return box, def, itemType, def.count
+                return box, def, itemType, def.count, def.count
             end
         end
     end
@@ -75,18 +93,12 @@ local function FindSource(inventory, itemType, used, depth)
     if depth >= MAX_DEPTH then return nil end
 
     for _, def in ipairs(openers) do
-        local box, found, outputType, yield = FindSource(inventory, def.boxType, used, depth + 1)
+        local box, found, outputType, yield, unit = FindSource(inventory, def.boxType, used, depth + 1)
         if box then
-            return box, found, outputType, yield * def.count
+            return box, found, outputType, yield * def.count, unit
         end
     end
     return nil
-end
-
-local function BoxCost(player, box)
-    local container = box:getContainer()
-    if not container or container == player:getInventory() then return 0 end
-    return box:getActualWeight() * (container:getWeightReduction() or 0) / 100
 end
 
 function MagazineBag_Boxes.NewRun()
@@ -96,7 +108,6 @@ end
 function MagazineBag_Boxes.Plan(player, demands, options)
     options = options or {}
     local inventory = player:getInventory()
-    local budget = options.budget
     local available, used, planned = {}, {}, {}
 
     for id in pairs(options.skip or {}) do used[id] = true end
@@ -124,24 +135,21 @@ function MagazineBag_Boxes.Plan(player, demands, options)
 
         for _, roundType in ipairs(demand.roundTypes) do
             while needed > 0 do
-                local box, def, outputType, yield = FindSource(inventory, roundType, used, 1)
+                local box, def, outputType, yield, unit = FindSource(inventory, roundType, used, 1)
                 if not box then break end
                 used[box:getID()] = true
 
-                local cost = BoxCost(player, box)
-                if budget == nil or cost <= budget then
-                    if budget then budget = budget - cost end
-                    table.insert(planned, {
-                        box = box,
-                        recipe = def.recipe,
-                        roundType = roundType,
-                        count = yield,
-                        outputType = outputType,
-                        outputCount = def.count,
-                    })
-                    available[roundType] = count(roundType) + yield
-                    needed = take(roundType, needed)
-                end
+                table.insert(planned, {
+                    box = box,
+                    recipe = def.recipe,
+                    roundType = roundType,
+                    count = yield,
+                    unit = unit,
+                    outputType = outputType,
+                    outputCount = def.count,
+                })
+                available[roundType] = count(roundType) + yield
+                needed = take(roundType, needed)
             end
             if needed <= 0 then break end
         end
@@ -190,22 +198,9 @@ local function OpenBox(player, entry, run)
     ISInventoryPaneContextMenu.OnNewCraft(entry.box, entry.recipe, player:getPlayerNum(), false)
 end
 
-function MagazineBag_Boxes.Open(player, demands, budget, run)
-    local planned = MagazineBag_Boxes.Plan(player, demands, { budget = budget, skip = run.tried })
-    local opened = {}
-    for _, entry in ipairs(planned) do
-        OpenBox(player, entry, run)
-        table.insert(opened, entry)
-        if MagazineBag_Boxes.IsContainerOfBoxes(entry) then
-            break
-        end
-    end
-    return opened
-end
-
-function MagazineBag_Boxes.OpenOne(player, demands, run)
+function MagazineBag_Boxes.OpenOne(player, demands, run, accept)
     local entry = MagazineBag_Boxes.Plan(player, demands, { looseUsed = true, skip = run.tried })[1]
-    if not entry then return nil end
+    if not entry or (accept and not accept(entry)) then return nil end
 
     OpenBox(player, entry, run)
     return entry

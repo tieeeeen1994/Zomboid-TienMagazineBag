@@ -4,23 +4,15 @@ local OPTIONS_ID = "TienMagazineBag"
 
 MagazineBag_Options.STORE_SPENT = "storeSpentAmmo"
 MagazineBag_Options.STORE_ALL = "storeAllAmmo"
-MagazineBag_Options.RELOAD = "reloadMagazines"
-MagazineBag_Options.RELOAD_BOXES = "reloadMagazinesOpenBoxes"
+MagazineBag_Options.RELOAD = "reloadAll"
 MagazineBag_Options.FETCH_FRESH = "fetchFreshAmmo"
-MagazineBag_Options.FETCH_BOXES = "fetchFreshAmmoOpenBoxes"
-
-local DEFAULTS = {
-    [MagazineBag_Options.RELOAD_BOXES] = false,
-    [MagazineBag_Options.FETCH_BOXES] = false,
-}
 
 function MagazineBag_Options.IsEnabled(id)
-    local default = DEFAULTS[id] ~= false
-    if not PZAPI or not PZAPI.ModOptions then return default end
+    if not PZAPI or not PZAPI.ModOptions then return true end
 
     local options = PZAPI.ModOptions:getOptions(OPTIONS_ID)
     local option = options and options:getOption(id)
-    if not option then return default end
+    if not option then return true end
 
     return option:getValue() ~= false
 end
@@ -36,12 +28,8 @@ if PZAPI and PZAPI.ModOptions then
         "Stows empty and part-used magazines, plus loose rounds, into your ammo bags.")
     options:addTickBox(MagazineBag_Options.STORE_ALL, "Store All Ammo", true,
         "As above, but full magazines go in as well.")
-    options:addTickBox(MagazineBag_Options.RELOAD, "Reload Magazines", true,
-        "Refills every empty and part-used magazine you are carrying.")
-    options:addTickBox(MagazineBag_Options.RELOAD_BOXES, "Reload Magazines (Open Boxes)", false,
-        "As Reload Magazines, but first opens just enough ammo boxes to cover what your loose rounds can't. Only shown when a box would be opened.")
+    options:addTickBox(MagazineBag_Options.RELOAD, "Reload All", true,
+        "Refills every empty and part-used magazine or speedloader you are carrying from loose rounds, opening ammo boxes only for what they can't cover. The magazine in your gun stays in until the spares are full, then is swapped for a full one and topped up last. Shotguns, lever-actions and revolvers are loaded first, then their ammo boxes are opened into loose rounds in your ammo bags, as many as the bags hold.")
     options:addTickBox(MagazineBag_Options.FETCH_FRESH, "Fetch Fresh Ammo", true,
         "Takes fresh ammunition back out of your ammo bags.")
-    options:addTickBox(MagazineBag_Options.FETCH_BOXES, "Fetch Fresh Ammo (Open Boxes)", false,
-        "As Fetch Fresh Ammo, but for guns that load loose rounds it opens ammo boxes when you don't have a full load of rounds. Only shown when a box would be opened.")
 end

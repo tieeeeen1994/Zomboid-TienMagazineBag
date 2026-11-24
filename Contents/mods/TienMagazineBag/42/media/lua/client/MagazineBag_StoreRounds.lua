@@ -25,12 +25,13 @@ end
 function MagazineBag_StoreRounds:perform()
     ISBaseTimedAction.perform(self)
 
-    MagazineBag_Core.StoreLooseRounds(self.character, self.roundTypes)
+    MagazineBag_Core.StoreLooseRounds(self.character, self.roundTypes, self.boxTypes)
 end
 
-function MagazineBag_StoreRounds:new(character, roundTypes, expected)
+function MagazineBag_StoreRounds:new(character, roundTypes, expected, boxTypes)
     local o = ISBaseTimedAction.new(self, character)
     o.roundTypes = roundTypes
+    o.boxTypes = boxTypes
     o.expected = expected
     o.maxTime = 1
     o.useProgressBar = false

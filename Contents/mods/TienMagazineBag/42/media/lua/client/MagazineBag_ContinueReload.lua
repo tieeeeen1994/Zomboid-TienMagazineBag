@@ -61,24 +61,8 @@ end
 
 function MagazineBag_ContinueReload:restart()
     self.boxRun.tried = {}
+    self.boxRun.inserted = false
     MagazineBag_Core.ReloadMagazines(self.character, 1, self.boxRun)
-end
-
-MagazineBag_ContinueFetch = MagazineBag_ContinueReload:derive("MagazineBag_ContinueFetch")
-
-function MagazineBag_ContinueFetch:perform()
-    ISBaseTimedAction.perform(self)
-
-    MagazineBag_Core.FetchFromBoxes(self.character, self.boxRun, MagazineBag_Core.FetchBudget(self.character))
-end
-
-function MagazineBag_ContinueFetch:restart()
-    self.boxRun.tried = {}
-    MagazineBag_Core.FetchFromBoxes(self.character, self.boxRun, MagazineBag_Core.FetchBudget(self.character))
-end
-
-function MagazineBag_ContinueFetch:new(character, boxRun, synced)
-    return MagazineBag_ContinueReload.new(self, character, nil, boxRun, synced)
 end
 
 local function CheckRestart(player)

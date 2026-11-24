@@ -194,8 +194,9 @@ end
 
 local function RevolverHasRounds(player, revolver)
     if MagazineBag_Core.CountSpareBullets(player, revolver) > 0 then return true end
-    return (revolver:getCurrentAmmoCount() or 0) == 0
-        and GetGunworks("SpeedLoader").GetBestSpeedLoaderForGun(player, revolver) ~= nil
+    local SpeedLoader = GetGunworks("SpeedLoader")
+    return SpeedLoader ~= nil and (revolver:getCurrentAmmoCount() or 0) == 0
+        and SpeedLoader.GetBestSpeedLoaderForGun(player, revolver) ~= nil
 end
 
 function MagazineBag_Core.GetBestMagazine(player, weapon)
@@ -229,7 +230,10 @@ function MagazineBag_Core.FindMagazineBags(player)
 end
 
 function MagazineBag_Core.IsMagazine(item, player)
-    local weapon = GetRangedWeapon(player)
+    return MagazineBag_Core.IsMagazineForGun(item, GetRangedWeapon(player))
+end
+
+function MagazineBag_Core.IsMagazineForGun(item, weapon)
     local kind = GetFeedKind(weapon)
     if not item or not kind then return false end
 
@@ -286,44 +290,6 @@ function MagazineBag_Core.IsMagazineFull(magazine)
     return currentAmmo >= maxAmmo
 end
 
-function MagazineBag_Core.HasSpentAmmoInInventory(player)
-    if not MagazineBag_Core.HasAmmoWeapon(player) then return false end
-
-    local inventory = player:getInventory()
-    local items = inventory:getItems()
-    local roundTypes = ToSet(MagazineBag_Core.GetWeaponRoundTypes(player))
-
-    for i = 0, items:size() - 1 do
-        local item = items:get(i)
-        if item then
-            if MagazineBag_Core.IsMagazine(item, player) and MagazineBag_Core.IsMagazineEmpty(item) then
-                return true
-            end
-            if roundTypes[item:getFullType()] then
-                return true
-            end
-        end
-    end
-
-    return false
-end
-
-function MagazineBag_Core.HasAmmoInInventory(player)
-    if not MagazineBag_Core.HasFeedWeapon(player) then return false end
-
-    local inventory = player:getInventory()
-    local items = inventory:getItems()
-
-    for i = 0, items:size() - 1 do
-        local item = items:get(i)
-        if item and MagazineBag_Core.IsMagazine(item, player) then
-            return true
-        end
-    end
-
-    return false
-end
-
 local function GetFetchableRoundList(player)
     if MagazineBag_Core.HasMagazineWeapon(player) then return {} end
 
@@ -335,14 +301,6 @@ end
 
 function MagazineBag_Core.GetFetchableRoundTypes(player)
     return ToSet(GetFetchableRoundList(player))
-end
-
-function MagazineBag_Core.GetFetchDemands(player)
-    local weapon = GetRangedWeapon(player)
-    if not weapon or not MagazineBag_Core.HasAmmoWeapon(player) or MagazineBag_Core.HasMagazineWeapon(player) then
-        return {}
-    end
-    return { { needed = weapon:getMaxAmmo() or 0, roundTypes = GetFetchableRoundList(player) } }
 end
 
 function MagazineBag_Core.HasFreshAmmoInBags(player)
@@ -508,6 +466,30 @@ local function EndsHoldingOnly(entry, roundType)
     return true
 end
 
+local function CarriedMagazines(player)
+    local found = {}
+    local function scan(container)
+        local items = container:getItems()
+        for i = 0, items:size() - 1 do
+            local item = items:get(i)
+            if item and MagazineBag_Core.IsMagazine(item, player) then table.insert(found, item) end
+        end
+    end
+
+    scan(player:getInventory())
+    for _, bag in ipairs(MagazineBag_Core.FindMagazineBags(player)) do
+        local bagContainer = bag:getItemContainer()
+        if bagContainer then scan(bagContainer) end
+    end
+    return found
+end
+
+local function PlannedRounds(entry)
+    local rounds = entry.magazine:getCurrentAmmoCount() or 0
+    for _, load in ipairs(entry.loads) do rounds = rounds + load.count end
+    return rounds
+end
+
 local function ChooseInsertMagazine(player, weapon, reloadable)
     local candidates = {}
     local planned = {}
@@ -515,38 +497,25 @@ local function ChooseInsertMagazine(player, weapon, reloadable)
         planned[entry.magazine] = true
         table.insert(candidates, entry)
     end
-
-    local function addFull(item)
-        if item and not planned[item] and MagazineBag_Core.IsMagazine(item, player) then
-            table.insert(candidates, { magazine = item, loads = {} })
-        end
-    end
-
-    local items = player:getInventory():getItems()
-    for i = 0, items:size() - 1 do addFull(items:get(i)) end
-    for _, bag in ipairs(MagazineBag_Core.FindMagazineBags(player)) do
-        local bagContainer = bag:getItemContainer()
-        if bagContainer then
-            local bagItems = bagContainer:getItems()
-            for i = 0, bagItems:size() - 1 do addFull(bagItems:get(i)) end
-        end
+    for _, item in ipairs(CarriedMagazines(player)) do
+        if not planned[item] then table.insert(candidates, { magazine = item, loads = {} }) end
     end
 
     local lastRound = GetLastRound(weapon)
     local best, bestKey = nil, nil
 
     for _, entry in ipairs(candidates) do
-        local rounds = entry.magazine:getCurrentAmmoCount() or 0
-        for _, load in ipairs(entry.loads) do rounds = rounds + load.count end
+        local rounds = PlannedRounds(entry)
 
         if rounds > 0 then
             local capacity = entry.magazine:getMaxAmmo() or 0
             local matches = lastRound and EndsHoldingOnly(entry, lastRound)
-            local key = matches and { 1, rounds, capacity } or { 0, capacity, rounds }
+            local ready = #entry.loads == 0 and 1 or 0
+            local key = matches and { 1, rounds, capacity, ready } or { 0, capacity, rounds, ready }
 
             local better = not bestKey
             if not better then
-                for k = 1, 3 do
+                for k = 1, 4 do
                     if key[k] ~= bestKey[k] then better = key[k] > bestKey[k]; break end
                 end
             end
@@ -555,6 +524,30 @@ local function ChooseInsertMagazine(player, weapon, reloadable)
     end
 
     return best
+end
+
+local function SwapWorthIt(player, weapon, magazines, pools, run)
+    local rounds, capacity = MagazineBag_Core.GetGunMagazineFill(weapon)
+    if rounds >= capacity then return false end
+
+    local planned = {}
+    for _, entry in ipairs(magazines) do
+        planned[entry.magazine] = true
+        if PlannedRounds(entry) > rounds then return true end
+    end
+    for _, item in ipairs(CarriedMagazines(player)) do
+        if not planned[item] and (item:getCurrentAmmoCount() or 0) > rounds then return true end
+    end
+
+    local inventory = player:getInventory()
+    local roundTypes = MagazineBag_Core.GetReloadRoundTypes(player, weapon)
+    for _, roundType in ipairs(roundTypes) do
+        local taken = pools[roundType] and pools[roundType].taken or 0
+        if inventory:getItemCountRecurse(roundType) > taken then return true end
+    end
+
+    local demand = { needed = capacity - rounds, roundTypes = roundTypes }
+    return MagazineBag_Boxes.Plan(player, { demand }, { looseUsed = true, skip = run.tried })[1] ~= nil
 end
 
 local function GunRounds(weapon)
@@ -626,9 +619,9 @@ local function SyncedAfterBox(player, weapon, entry)
     end
 end
 
-local function OpenBox(player, demands, boxRun)
+local function OpenBox(player, demands, boxRun, accept)
     local queued = QueueSize(player)
-    local entry = MagazineBag_Boxes.OpenOne(player, demands, boxRun)
+    local entry = MagazineBag_Boxes.OpenOne(player, demands, boxRun, accept)
     if not entry then return false end
     if not isClient() or QueueSize(player) == queued then return true end
 
@@ -643,30 +636,80 @@ local function OpenBox(player, demands, boxRun)
     return true
 end
 
-function MagazineBag_Core.ReloadMagazines(player, pass, boxRun)
+local function GunDemand(player, gun)
+    return {
+        needed = (gun:getMaxAmmo() or 0) - (gun:getCurrentAmmoCount() or 0),
+        roundTypes = MagazineBag_Core.GetReloadRoundTypes(player, gun),
+    }
+end
+
+local function RoundWeight(roundType)
+    local script = getScriptManager():FindItem(roundType)
+    return script and script:getActualWeight() or 0
+end
+
+local function BagBoxDemands(player)
+    local roundList = GetFetchableRoundList(player)
+    if #roundList == 0 then return nil end
+    local roundTypes = ToSet(roundList)
+
+    local bags = {}
+    local room = 0
+    for _, bag in ipairs(MagazineBag_Core.FindMagazineBags(player)) do
+        local container = bag:getItemContainer()
+        if container then
+            bags[container] = true
+            room = room + math.max(0, container:getEffectiveCapacity(player) - container:getCapacityWeight())
+        end
+    end
+
+    local items = player:getInventory():getItems()
+    for i = 0, items:size() - 1 do
+        local item = items:get(i)
+        if item and roundTypes[item:getFullType()] and not item:isFavorite() then
+            room = room - item:getActualWeight()
+        end
+    end
+
+    local function accept(entry)
+        local freed = bags[entry.box:getContainer()] and not MagazineBag_Boxes.IsContainerOfBoxes(entry)
+            and entry.box:getActualWeight() or 0
+        return entry.unit * RoundWeight(entry.roundType) <= room + freed
+    end
+
+    return { { needed = 1, roundTypes = roundList } }, accept, roundTypes
+end
+
+function MagazineBag_Core.HasLooseRoundWork(player)
+    local weapon = GetRangedWeapon(player)
+    if not MagazineBag_Core.LoadsLooseRounds(weapon) then return false end
+    if CanLoadGun(weapon) and (RevolverHasRounds(player, weapon)
+            or MagazineBag_Boxes.HasBoxesFor(player, { GunDemand(player, weapon) })) then
+        return true
+    end
+
+    local demands, accept = BagBoxDemands(player)
+    local entry = demands and MagazineBag_Boxes.Plan(player, demands, { looseUsed = true })[1]
+    return entry ~= nil and accept(entry)
+end
+
+function MagazineBag_Core.ReloadMagazines(player, pass, run)
     if not player then return end
     pass = pass or 1
+    run = run or MagazineBag_Boxes.NewRun()
 
     local isMagazineWeapon = MagazineBag_Core.HasMagazineWeapon(player)
     local weapon = isMagazineWeapon and player:getPrimaryHandItem() or nil
 
-    if weapon and pass < 2 and weapon:isContainsClip() and GunMagazineHasRoom(weapon) then
-        local synced = isClient() and SyncedAfterEject(player, weapon) or nil
-        ISTimedActionQueue.add(ISEjectMagazine:new(player, weapon))
-        ISTimedActionQueue.add(MagazineBag_ContinueReload:new(player, pass + 1, boxRun, synced))
-        return
-    end
+    local looseGun = GetRangedWeapon(player)
+    if not MagazineBag_Core.LoadsLooseRounds(looseGun) then looseGun = nil end
 
-    local revolver = MagazineBag_Core.HasSpeedLoaderWeapon(player) and player:getPrimaryHandItem() or nil
+    local revolver = looseGun
     if revolver and pass < 2 and CanLoadGun(revolver) then
-        if boxRun and not RevolverHasRounds(player, revolver) then
-            local demand = {
-                needed = (revolver:getMaxAmmo() or 0) - (revolver:getCurrentAmmoCount() or 0),
-                roundTypes = MagazineBag_Core.GetReloadRoundTypes(player, revolver),
-            }
-            local opened, synced = OpenBox(player, { demand }, boxRun)
+        if not RevolverHasRounds(player, revolver) then
+            local opened, synced = OpenBox(player, { GunDemand(player, revolver) }, run)
             if opened then
-                ISTimedActionQueue.add(MagazineBag_ContinueReload:new(player, pass, boxRun, synced))
+                ISTimedActionQueue.add(MagazineBag_ContinueReload:new(player, pass, run, synced))
                 return
             end
         end
@@ -675,7 +718,7 @@ function MagazineBag_Core.ReloadMagazines(player, pass, boxRun)
         local synced = isClient() and SyncedAfterGunLoad(player, revolver) or nil
         ISReloadWeaponAction.BeginAutomaticReload(player, revolver)
         if QueueSize(player) == queued then synced = nil end
-        ISTimedActionQueue.add(MagazineBag_ContinueReload:new(player, pass + 1, boxRun, synced))
+        ISTimedActionQueue.add(MagazineBag_ContinueReload:new(player, pass + 1, run, synced))
         return
     end
 
@@ -725,28 +768,45 @@ function MagazineBag_Core.ReloadMagazines(player, pass, boxRun)
     end
 
     local shortfall = {}
-    if boxRun then
-        for _, entry in ipairs(magazines) do
-            local short = entry.needed
-            for _, load in ipairs(entry.loads) do short = short - load.count end
-            if short > 0 then
-                table.insert(shortfall, { needed = short, roundTypes = entry.roundTypes })
-            end
+    for _, entry in ipairs(magazines) do
+        local short = entry.needed
+        for _, load in ipairs(entry.loads) do short = short - load.count end
+        if short > 0 then
+            table.insert(shortfall, { needed = short, roundTypes = entry.roundTypes })
         end
     end
     local moreBoxes = #shortfall > 0
-        and MagazineBag_Boxes.Plan(player, shortfall, { looseUsed = true, skip = boxRun.tried })[1] ~= nil
+        and MagazineBag_Boxes.Plan(player, shortfall, { looseUsed = true, skip = run.tried })[1] ~= nil
 
     local insertMagazine = nil
-    local insertAlreadyInHand = false
-    if weapon and not weapon:isContainsClip() and not moreBoxes then
+    if weapon and not weapon:isContainsClip() and not run.inserted then
         insertMagazine = ChooseInsertMagazine(player, weapon, magazines)
+        run.inserted = insertMagazine ~= nil
+    end
+
+    local order = {}
+    local insertAfterLoad = false
+    for _, entry in ipairs(magazines) do
+        if entry.magazine == insertMagazine and #entry.loads > 0 then
+            insertAfterLoad = true
+            table.insert(order, 1, entry)
+        else
+            table.insert(order, entry)
+        end
+    end
+
+    if insertMagazine and not insertAfterLoad then
+        local container = insertMagazine:getContainer()
+        if container and container ~= playerInventory then
+            ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, insertMagazine, container, playerInventory))
+        end
+        ISTimedActionQueue.add(ISInsertMagazine:new(player, weapon, insertMagazine))
     end
 
     local movedIn = 0
     local loaded = 0
 
-    for _, entry in ipairs(magazines) do
+    for _, entry in ipairs(order) do
         local magazine = entry.magazine
 
         if #entry.loads > 0 then
@@ -779,7 +839,7 @@ function MagazineBag_Core.ReloadMagazines(player, pass, boxRun)
             end
 
             if magazine == insertMagazine then
-                insertAlreadyInHand = true
+                ISTimedActionQueue.add(ISInsertMagazine:new(player, weapon, magazine))
             elseif entry.bagContainer then
                 ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, magazine, playerInventory, entry.bagContainer))
             else
@@ -788,26 +848,49 @@ function MagazineBag_Core.ReloadMagazines(player, pass, boxRun)
         end
     end
 
-    if insertMagazine then
-        local container = insertMagazine:getContainer()
-        if not insertAlreadyInHand and container and container ~= playerInventory then
-            ISTimedActionQueue.add(MagazineBag_TransferAction:new(player, insertMagazine, container, playerInventory))
-        end
-        ISTimedActionQueue.add(ISInsertMagazine:new(player, weapon, insertMagazine))
-    end
-
     if moreBoxes then
-        local opened, synced = OpenBox(player, shortfall, boxRun)
+        local opened, synced = OpenBox(player, shortfall, run)
         if opened then
-            ISTimedActionQueue.add(MagazineBag_ContinueReload:new(player, math.max(pass, 2), boxRun, synced))
+            ISTimedActionQueue.add(MagazineBag_ContinueReload:new(player, math.max(pass, 2), run, synced))
             return
         end
     end
 
-    if boxRun then
-        MagazineBag_Boxes.ReturnLeftovers(player, boxRun)
+    if looseGun then
+        local demands, accept, roundTypes = BagBoxDemands(player)
+        local entry = demands and MagazineBag_Boxes.Plan(player, demands, { looseUsed = true, skip = run.tried })[1]
+        if entry and accept(entry) and loaded > 0 then
+            local synced = nil
+            if isClient() then
+                local related = MagazineBag_Core.GetRelatedRoundTypes(player)
+                local expected = MagazineBag_Core.CountLooseRounds(player, related) + movedIn - loaded
+                synced = function()
+                    local now = MagazineBag_Core.CountLooseRounds(player, related)
+                    return now == expected, string.format("loads: loose rounds=%d, expected=%d", now, expected)
+                end
+            end
+            ISTimedActionQueue.add(MagazineBag_ContinueReload:new(player, math.max(pass, 2), run, synced))
+            return
+        elseif entry and accept(entry) then
+            MagazineBag_Core.StoreLooseRounds(player, roundTypes)
+            local opened, synced = OpenBox(player, demands, run, accept)
+            if opened then
+                ISTimedActionQueue.add(MagazineBag_ContinueReload:new(player, math.max(pass, 2), run, synced))
+                return
+            end
+        end
     end
 
+    if weapon and weapon:isContainsClip() and not run.ejected and SwapWorthIt(player, weapon, magazines, pools, run) then
+        run.ejected = true
+        run.inserted = false
+        local synced = isClient() and SyncedAfterEject(player, weapon) or nil
+        ISTimedActionQueue.add(ISEjectMagazine:new(player, weapon))
+        ISTimedActionQueue.add(MagazineBag_ContinueReload:new(player, math.max(pass, 2), run, synced))
+        return
+    end
+
+    MagazineBag_Boxes.ReturnLeftovers(player, run)
     MagazineBag_Core.QueueStoreRounds(player, movedIn, loaded)
 end
 
@@ -824,35 +907,6 @@ function MagazineBag_Core.FindBagForItem(player, item, exclude)
     end
 
     return nil
-end
-
-function MagazineBag_Core.StoreAmmoToBag(player, includeFull)
-    if not player then return end
-
-    local inventory = player:getInventory()
-    local items = inventory:getItems()
-    local magazineBags = MagazineBag_Core.FindMagazineBags(player)
-
-    if #magazineBags == 0 then return end
-
-    local reserved = {}
-    for index = 1, #magazineBags do reserved[index] = 0 end
-
-    for i = items:size() - 1, 0, -1 do
-        local item = items:get(i)
-        if item and MagazineBag_Core.IsMagazine(item, player) and (includeFull or MagazineBag_Core.IsMagazineEmpty(item)) then
-            StoreInBag(player, item, inventory, magazineBags, reserved)
-        end
-    end
-
-    for _, roundType in ipairs(MagazineBag_Core.GetWeaponRoundTypes(player)) do
-        for i = items:size() - 1, 0, -1 do
-            local item = items:get(i)
-            if item and item:getFullType() == roundType then
-                StoreInBag(player, item, inventory, magazineBags, reserved)
-            end
-        end
-    end
 end
 
 local function AddRoundTypes(player, item, set)
@@ -907,7 +961,7 @@ function MagazineBag_Core.CountLooseRounds(player, roundTypes)
     return count
 end
 
-function MagazineBag_Core.StoreLooseRounds(player, roundTypes)
+function MagazineBag_Core.StoreLooseRounds(player, roundTypes, boxTypes, reserved)
     if not player or not roundTypes then return end
 
     local magazineBags = MagazineBag_Core.FindMagazineBags(player)
@@ -915,29 +969,129 @@ function MagazineBag_Core.StoreLooseRounds(player, roundTypes)
 
     local inventory = player:getInventory()
     local items = inventory:getItems()
-    local byType = {}
-    local order = {}
+    if not reserved then
+        reserved = {}
+        for index = 1, #magazineBags do reserved[index] = 0 end
+    end
 
-    for i = items:size() - 1, 0, -1 do
-        local item = items:get(i)
-        local fullType = item and item:getFullType()
-        if fullType and roundTypes[fullType] and not item:isFavorite() then
-            if not byType[fullType] then
-                byType[fullType] = {}
-                table.insert(order, fullType)
+    for _, types in ipairs({ roundTypes, boxTypes or {} }) do
+        local byType = {}
+        local order = {}
+
+        for i = items:size() - 1, 0, -1 do
+            local item = items:get(i)
+            local fullType = item and item:getFullType()
+            if fullType and types[fullType] and not item:isFavorite() then
+                if not byType[fullType] then
+                    byType[fullType] = {}
+                    table.insert(order, fullType)
+                end
+                table.insert(byType[fullType], item)
             end
-            table.insert(byType[fullType], item)
+        end
+
+        for _, fullType in ipairs(order) do
+            for _, item in ipairs(byType[fullType]) do
+                StoreInBag(player, item, inventory, magazineBags, reserved)
+            end
+        end
+    end
+end
+
+local function CarriedGuns(player)
+    local guns, seen = {}, {}
+    local function add(item)
+        if item and not seen[item] and instanceof(item, "HandWeapon") and item:isRanged() then
+            seen[item] = true
+            table.insert(guns, item)
         end
     end
 
+    add(player:getPrimaryHandItem())
+    add(player:getSecondaryHandItem())
+    local attached = player:getAttachedItems()
+    for i = 0, attached:size() - 1 do
+        add(attached:get(i):getItem())
+    end
+
+    local hotbar = TienCustomizableHotbar
+    if type(hotbar) == "table" and type(hotbar.Slots) == "function" and type(hotbar.Steps) == "function" then
+        local inventory = player:getInventory()
+        local function addEntry(entry)
+            if type(entry) ~= "table" or type(entry.type) ~= "string" then return end
+            local item = entry.id and inventory:getItemWithIDRecursiv(entry.id)
+            if not item or item:getFullType() ~= entry.type then
+                item = inventory:getFirstTypeRecurse(entry.type)
+            end
+            add(item)
+        end
+        local ok, slots = pcall(hotbar.Slots, player)
+        if ok and type(slots) == "table" then
+            for _, slot in ipairs(slots) do
+                addEntry(slot)
+                for _, step in ipairs(hotbar.Steps(slot)) do addEntry(step) end
+            end
+        end
+    end
+    return guns
+end
+
+function MagazineBag_Core.CollectStorable(player, includeFull)
+    local guns = CarriedGuns(player)
+    local magazines, roundTypes = {}, {}
+    for _, gun in ipairs(guns) do AddRoundTypes(player, gun, roundTypes) end
+
+    local items = player:getInventory():getItems()
+    for i = items:size() - 1, 0, -1 do
+        local item = items:get(i)
+        for _, gun in ipairs(guns) do
+            if item and MagazineBag_Core.IsMagazineForGun(item, gun) and item:getAttachedSlot() < 0 and not player:isEquipped(item) then
+                if includeFull or MagazineBag_Core.IsMagazineEmpty(item) then table.insert(magazines, item) end
+                break
+            end
+        end
+    end
+
+    return magazines, roundTypes, MagazineBag_Boxes.GetSourceTypes(roundTypes)
+end
+
+function MagazineBag_Core.HasSpentAmmoInInventory(player)
+    local magazines, roundTypes, boxTypes = MagazineBag_Core.CollectStorable(player, false)
+    if #magazines > 0 then return true end
+
+    local items = player:getInventory():getItems()
+    for i = 0, items:size() - 1 do
+        local item = items:get(i)
+        local fullType = item and item:getFullType()
+        if fullType and (roundTypes[fullType] or boxTypes[fullType]) and not item:isFavorite() then
+            return true
+        end
+    end
+    return false
+end
+
+function MagazineBag_Core.HasAmmoInInventory(player)
+    for _, magazine in ipairs((MagazineBag_Core.CollectStorable(player, true))) do
+        if MagazineBag_Core.IsMagazineFull(magazine) then return true end
+    end
+    return false
+end
+
+function MagazineBag_Core.StoreAmmoToBag(player, includeFull)
+    if not player then return end
+
+    local magazineBags = MagazineBag_Core.FindMagazineBags(player)
+    if #magazineBags == 0 then return end
+
+    local inventory = player:getInventory()
     local reserved = {}
     for index = 1, #magazineBags do reserved[index] = 0 end
 
-    for _, fullType in ipairs(order) do
-        for _, item in ipairs(byType[fullType]) do
-            StoreInBag(player, item, inventory, magazineBags, reserved)
-        end
+    local magazines, roundTypes, boxTypes = MagazineBag_Core.CollectStorable(player, includeFull)
+    for _, magazine in ipairs(magazines) do
+        StoreInBag(player, magazine, inventory, magazineBags, reserved)
     end
+    MagazineBag_Core.StoreLooseRounds(player, roundTypes, boxTypes, reserved)
 end
 
 function MagazineBag_Core.QueueStoreRounds(player, movedIn, loaded)
@@ -955,10 +1109,11 @@ function MagazineBag_Core.QueueStoreRounds(player, movedIn, loaded)
     if isClient() then
         expected = MagazineBag_Core.CountLooseRounds(player, roundTypes) + movedIn - loaded
     end
-    ISTimedActionQueue.add(MagazineBag_StoreRounds:new(player, roundTypes, expected))
+    ISTimedActionQueue.add(MagazineBag_StoreRounds:new(player, roundTypes, expected,
+        MagazineBag_Boxes.GetSourceTypes(roundTypes)))
 end
 
-function MagazineBag_Core.FetchFreshAmmoFromBag(player, openBoxes)
+function MagazineBag_Core.FetchFreshAmmoFromBag(player)
     if not player then return end
 
     local magazineBags = MagazineBag_Core.FindMagazineBags(player)
@@ -1001,31 +1156,6 @@ function MagazineBag_Core.FetchFreshAmmoFromBag(player, openBoxes)
                 end
             end
         end
-    end
-
-    if openBoxes then
-        MagazineBag_Core.FetchFromBoxes(player, MagazineBag_Boxes.NewRun(), not unlimited and (budget - added) or nil)
-    end
-end
-
-function MagazineBag_Core.FetchBudget(player)
-    if player:isUnlimitedCarry() then return nil end
-    local inventory = player:getInventory()
-    return inventory:getMaxWeight() - inventory:getCapacityWeight()
-end
-
-function MagazineBag_Core.FetchFromBoxes(player, boxRun, budget)
-    local queued = QueueSize(player)
-    local opened = MagazineBag_Boxes.Open(player, MagazineBag_Core.GetFetchDemands(player), budget, boxRun)
-
-    if #opened > 0 then
-        local synced = nil
-        if isClient() and QueueSize(player) > queued then
-            synced = MagazineBag_Boxes.SyncedAfterOpen(player, opened)
-        end
-        ISTimedActionQueue.add(MagazineBag_ContinueFetch:new(player, boxRun, synced))
-    else
-        MagazineBag_Boxes.ReturnLeftovers(player, boxRun)
     end
 end
 
