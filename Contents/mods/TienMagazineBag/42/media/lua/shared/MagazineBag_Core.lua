@@ -585,13 +585,26 @@ local function QueueSize(player)
     return #ISTimedActionQueue.getTimedActionQueue(player).queue
 end
 
-local function SyncedAfterEject(player, weapon)
+-- An empty magazine adds no rounds, so the count alone matched before the ejected magazine
+-- itself had reached the client, and the pass planned without it.
+local function HasNewMagazine(player, before)
+    local items = player:getInventory():getItems()
+    for i = 0, items:size() - 1 do
+        local item = items:get(i)
+        if item and not before[item:getID()] and MagazineBag_Core.IsMagazine(item, player) then return true end
+    end
+    return false
+end
+
+local function SyncedAfterEject(player, weapon, before)
     local total = CountCarriedRounds(player, weapon)
     return function()
         local hasClip = weapon:isContainsClip()
         local now = CountCarriedRounds(player, weapon)
-        return not hasClip and now == total,
-            string.format("eject: gun has magazine=%s, rounds carried=%d, expected=%d", tostring(hasClip), now, total)
+        local arrived = HasNewMagazine(player, before)
+        return not hasClip and now == total and arrived,
+            string.format("eject: gun has magazine=%s, rounds carried=%d, expected=%d, magazine arrived=%s",
+                tostring(hasClip), now, total, tostring(arrived))
     end
 end
 
@@ -884,10 +897,32 @@ function MagazineBag_Core.ReloadMagazines(player, pass, run)
     if weapon and weapon:isContainsClip() and not run.ejected and SwapWorthIt(player, weapon, magazines, pools, run) then
         run.ejected = true
         run.inserted = false
-        local synced = isClient() and SyncedAfterEject(player, weapon) or nil
+        run.beforeEject = {}
+        local items = playerInventory:getItems()
+        for i = 0, items:size() - 1 do
+            run.beforeEject[items:get(i):getID()] = true
+        end
+        local synced = isClient() and SyncedAfterEject(player, weapon, run.beforeEject) or nil
         ISTimedActionQueue.add(ISEjectMagazine:new(player, weapon))
         ISTimedActionQueue.add(MagazineBag_ContinueReload:new(player, math.max(pass, 2), run, synced))
         return
+    end
+
+    if run.beforeEject then
+        local handled = {}
+        if insertMagazine then handled[insertMagazine] = true end
+        for _, entry in ipairs(order) do
+            if #entry.loads > 0 then handled[entry.magazine] = true end
+        end
+        local items = playerInventory:getItems()
+        for i = 0, items:size() - 1 do
+            local item = items:get(i)
+            if item and not run.beforeEject[item:getID()] and not handled[item]
+                    and MagazineBag_Core.IsMagazine(item, player)
+                    and not player:isEquipped(item) and item:getAttachedSlot() < 0 then
+                StoreInBag(player, item, playerInventory, magazineBags, reserved)
+            end
+        end
     end
 
     MagazineBag_Boxes.ReturnLeftovers(player, run)
